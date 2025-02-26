@@ -1,0 +1,755 @@
+---
+heroImage: /src/assets/images/cover_Raindrops.png
+category: 实践记录
+description: Unity下URP高斯模糊与雨滴屏幕后处理效果
+pubDate: 2025-01-25T16:00:00.000Z
+tags:
+  - 渲染效果
+  - 后处理
+title: 【后处理】雨滴屏幕效果
+---
+
+import LocalVideo from '../../components/LocalVideo.astro'
+
+<LocalVideo src='/assets/Effects/Raindrops/video1.mp4' alt='video1' />
+
+### 具体实现
+
+#### Grid 网格
+
+将uv切分成小的网格，每一滴雨滴在各自的网格中从上往下滑落
+
+```c
+fixed4 frag (v2f i) : SV_Target
+{
+    float4 col = 0;
+    float2 uv = i.uv * _Size;
+    float2 gv = frac(uv);
+    col.rg = gv;
+    return col;
+}
+
+```
+
+<img
+	src='/assets/Effects/Raindrops/img1.png'
+	alt='img1'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+#### Boxes
+
+将每一个小方格变成纵向排布的长方形，之后雨滴可以从上往下纵向滑落较长的距离
+
+```c
+float2 aspect = float2(4,1); // 将u压缩成1/4， v不变
+float2 uv = i.uv * _Size * aspect;
+float2 gv = frac(uv) - 0.5; // 取小数并将中心点从左下角移动到中心
+
+```
+
+```c
+if (gv.x > 0.48 || gv.y > 0.48)
+{
+    // 将每一个方框的边缘显示为红线
+    col = float4(1,0,0,1);
+}
+
+```
+
+<img
+	src='/assets/Effects/Raindrops/img2.png'
+	alt='img2'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+#### Drop 雨滴
+
+模拟雨点, 通过smoothstep生成小白点
+
+```c
+float drop = smoothstep(0.05, 0.03, length(gv));
+col += drop;
+
+```
+
+> 📣 **smoothstep(a, b, x)**
+>
+> - smoothstep可以用来生成0到1的平滑过渡值，它也叫平滑阶梯函数
+> - 当 x < a 时，返回 0，当 x > b 时，返回 1，否则在 0和 1之间平滑过渡
+
+<img
+	src='/assets/Effects/Raindrops/img3.png'
+	alt='img3'
+	style='width: 10%; height: auto; display:block; margin: 0 auto;'
+/>
+<br></br>
+
+<img
+	src='/assets/Effects/Raindrops/img4.png'
+	alt='img4'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+根据aspect调整被拉伸的小白点
+
+```c
+float2 dropPos = gv / aspect;
+float drop = smoothstep(0.05, 0.03, length(dropPos));
+col += drop;
+
+```
+
+<img
+	src='/assets/Effects/Raindrops/img5.png'
+	alt='img5'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+#### Move 滑动
+
+雨点从上到下滑动， 通过变量x和y来控制雨点的位置
+
+```c
+// 通过xy来控制雨点的位置
+float x = 0;
+float y = 0;
+
+float2 dropPos = gv - float2(x,y) / aspect;
+float drop = smoothstep(0.05, 0.03, length(dropPos));
+col += drop;
+
+```
+
+<img
+	src='/assets/Effects/Raindrops/img6.png'
+	alt='img6'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+通过\_Time.y与sin()来控制雨滴滑落动画
+
+- sin(y)得到的结果是[-1, 1], 需要钳制在[-0.5, 0.5]之间，而为了让雨点完整的出现在方框内，映射到[-0.43, 0.43]是比较好的选择
+
+```c
+float t = _Time.y;
+
+...
+
+// 通过xy来控制雨点的位置
+float x = 0;
+float y = sin(t) * 0.43;
+
+float2 dropPos = (gv - float2(x,y)) / aspect;
+float drop = smoothstep(0.05, 0.03, length(dropPos));
+col += drop;
+
+```
+
+<LocalVideo src='/assets/Effects/Raindrops/video2.mp4' alt='video2' />
+
+---
+
+调整滑落效果
+
+- 现在雨滴的下降与上升是匀速的，目标效果是雨滴快速下降，缓慢上升
+- 雨滴缓慢上升的效果将在之后被网格整体下移的效果抵消
+- 修改sin(t)使获得一种符合预期效果的图像
+- $$-sin(x + sin(x + sin(x) * 0.5))$$
+
+<img
+	src='/assets/Effects/Raindrops/img7.png'
+	alt='img7'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+```c
+float y = -sin(t + sin(t + sin(t) * 0.5)) * 0.43;
+
+```
+
+<LocalVideo src='/assets/Effects/Raindrops/video3.mp4' alt='video3' />
+
+<br></br>
+
+#### Grid Movement
+
+通过向下移动方格来抵消雨滴上移的效果
+
+```c
+uv.y += t * 0.25; // - 通过向下移动方格来抵消雨滴上移的效果
+```
+
+<LocalVideo src='/assets/Effects/Raindrops/video4.mp4' alt='video4' />
+
+<br></br>
+
+#### 雨滴拖尾
+
+创建拖尾雨滴
+
+- 拖尾雨滴的创建方法与之前一样，通过smoothstep创建雨滴形状
+- 当前雨滴位置在方框中心，且会随着方框移动
+
+```c
+float2 trailPos = (gv - float2(x,0)) / aspect;
+float trail = smoothstep(0.03, 0.01, length(trailPos));
+```
+
+<img
+	src='/assets/Effects/Raindrops/img8.png'
+	alt='img8'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+将每个方框切分成更小的方框
+
+- 切分的逻辑与最开始创建grid时一样
+- 每个小小方框内会有一滴拖尾雨点
+
+```c
+    trailPos.y = frac(trailPos.y * 8);
+```
+
+<img
+	src='/assets/Effects/Raindrops/img9.png'
+	alt='img9'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+还原压缩与偏移
+
+- 在切分时纵向压缩了小雨滴，所以要乘以压缩的量 /8
+- 同时要将小小方框的中心点移动到方框中心 -0.5
+
+```c
+    trailPos.y = (frac(trailPos.y * 8) - 0.5) / 8;
+```
+
+<img
+	src='/assets/Effects/Raindrops/img10.png'
+	alt='img10'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+雨滴拖尾应该固定在面片上
+
+- 当前效果，雨滴会随着方框一起向下移动，而真实的雨滴拖尾会固定在窗户的便面
+- 通过方框的移动量来抵消拖尾的移动 (即让拖尾向上移动)
+
+```c
+uv.y += t * 0.25; // - 通过向下移动方格来抵消雨滴上移的效果
+
+...
+
+float2 trailPos = (gv - float2(x, t * 0.25)) / aspect;
+```
+
+---
+
+拖尾遮罩
+
+- 在main drop下面的拖尾不应该显示
+- 通过smoothstep来判断在maindrop下的拖尾
+
+<img
+	src='/assets/Effects/Raindrops/img11.png'
+	alt='img11'
+	style='width: 15%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- 在maindrop以下像素的dropPos是负数，在maindrop以上像素的dropPos是正数。可以使用dropPos来充当mask判断条件以建立拖尾的模板
+
+```c
+trail *= dropPos.y; //拖尾mask
+```
+
+<img
+	src='/assets/Effects/Raindrops/img12.png'
+	alt='img12'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+- 通过smoothstep来进一步优化mask边缘（钳制mask对比度）
+
+<img
+	src='/assets/Effects/Raindrops/img13.png'
+	alt='img13'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+拖尾的渐隐效果
+
+- 根据maindrop的位置，对maindrop以上的区域建立一个渐变遮罩(0~1)
+
+<img
+	src='/assets/Effects/Raindrops/img14.png'
+	alt='img14'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- 红色方框最顶部y = 0.5, 最底部 y = -0.5
+- maindrop的位置通过 float y = -sin(t + sin(t + sin(t) _ 0.5)) _ 0.43;来控制
+- gv.y表示方框内当前像素位置
+
+```c
+// 渐隐效果
+// smoothstep(方框顶部y， maindrop位置y， 当前位置y);
+trail *= smoothstep(0.5, y, gv.y);
+```
+
+<img
+	src='/assets/Effects/Raindrops/img15.png'
+	alt='img15'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+#### 调整 MainDrop 形状
+
+现在maindrop是正圆形，需要调整成上窄下宽的雨滴形状
+
+```c
+y -= gv.x * gv.x; //调整雨滴形状
+```
+
+<img
+	src='/assets/Effects/Raindrops/img16.png'
+	alt='img16'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+添加wiggle效果
+
+- 通过调整maindrop的x来控制雨滴扭曲的效果
+- 通过对sin(x)进行进一步的调整得到这样的图像：
+- $$ sin(3x)sin(x)^6 $$
+
+<img
+	src='/assets/Effects/Raindrops/img17.png'
+	alt='img17'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+```c
+    // 通过xy来控制雨点的位置
+    float w = i.uv.y * 10; // wiggles
+    float x = sin(3 * w) * pow(sin(w), 6) * 0.43;
+    float y = -sin(t + sin(t + sin(t) * 0.5)) * 0.43;
+
+    // -x 是为了平衡wiggles带来的偏差
+    y -= (gv.x-x) * (gv.x-x); //调整雨滴形状
+```
+
+<LocalVideo src='/assets/Effects/Raindrops/video5.mp4' alt='video5' />
+
+<br></br>
+
+#### 打乱每个box中maindrop的流动
+
+给每一个box分配一个id，再通过这个id生成随机数来打乱每一个maindrop的运动
+给每一个box生成ID
+
+```c
+float2 id = floor(uv);
+col.rg = id * 0.1;
+
+```
+
+<img
+	src='/assets/Effects/Raindrops/img18.png'
+	alt='img18'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+通过id生成一个随机数（0~1）
+
+- 通过将id进行一些数学运算得出一个难以观测到规律的数作为随机数
+
+```c
+    // 通过id生成一个随机数
+    float genRandomNum(float2 p)
+    {
+        p = frac(p * float2(123.34, 345.45));
+        p += dot(p, p + 34.345);
+        return frac(p.x * p.y);
+    }
+```
+
+```c
+    fixed4 frag (v2f i) : SV_Target
+    {
+        ...
+        col += genRandomNum(id);
+        return col;
+    }
+```
+
+<img
+	src='/assets/Effects/Raindrops/img19.png'
+	alt='img19'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+通过随机数来给每一个box添加y轴偏移值
+
+```c
+    // 通过随机数给每一个box增加时间偏移值
+    float random = genRandomNum(id); // [0,1]
+    t += random * 2 * PI; // sin wave phase
+
+```
+
+<LocalVideo src='/assets/Effects/Raindrops/video6.mp4' alt='video6' />
+
+---
+
+通过随机数来给每一个box添加x轴偏移值
+
+```c
+    float x = (random - 0.5) * 0.8; // [-0.4, 0.4]
+    x += (0.4 - abs(x)) * sin(3 * w) * pow(sin(w), 6) * 0.43;// 0 - 0.4 - 0 边缘为0，中间最大
+```
+
+<br></br>
+
+#### FogTrail 雾气拖尾
+
+模拟窗户上的雾气效果，雨滴拖尾划过fog变清晰
+将原本雨滴拖尾的mask作为fog
+
+```c
+    float2 trailPos = (gv - float2(x, t * 0.25)) / aspect;
+    trailPos.y = (frac(trailPos.y * 8) - 0.5) / 8;
+    float trail = smoothstep(0.03, 0.01, length(trailPos));
+
+    float fogTrail = smoothstep(-0.05, 0.05, dropPos.y); //fog
+    fogTrail *= smoothstep(0.5, y, gv.y); //渐隐效果
+
+    return fogTrail * 0.5;
+```
+
+- fog
+
+<img
+	src='/assets/Effects/Raindrops/img20.png'
+	alt='img20'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- fog + drops
+
+<img
+	src='/assets/Effects/Raindrops/img21.png'
+	alt='img21'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+裁剪掉左右两侧的雾气，只留下trails区域内的fog
+
+- 以dropPos的x轴为判断条件
+
+```c
+fogTrail *= smoothstep(0.05, 0.04, abs(dropPos.x)); //裁剪左右两侧fog
+```
+
+<img
+	src='/assets/Effects/Raindrops/img21.png'
+	alt='img22'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+#### 雨滴中的扭曲
+
+雨滴会形成一种凸透镜的效果，扭曲采样到的屏幕图像
+仅在雨滴区域对uv添加offset，以达到雨滴区域内的扭曲效果
+
+---
+
+确定雨滴区域
+
+- drop相当于mask，确定出雨滴的区域
+- dropPos 已经是经过雨滴形状与时间扭曲的
+- 雨滴以外的其他区域是0，不影响原来uv
+
+<img
+	src='/assets/Effects/Raindrops/img23.png'
+	alt='img23'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+扭曲uv
+
+- 通过\_Distortion来控制扭曲效果
+- 雨滴中的成像是倒过来的，所以选用负数的\_Distortion
+
+```c
+float2 offset = drop * dropPos + trail * trailPos;
+col = tex2D(_MainTex, i.uv + offset * _Distortion);
+```
+
+- 完整面片
+
+<img
+	src='/assets/Effects/Raindrops/img24.png'
+	alt='img24'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- 雨滴细节
+
+<img
+	src='/assets/Effects/Raindrops/img25.png'
+	alt='img25'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<LocalVideo src='/assets/Effects/Raindrops/video7.mp4' alt='video7' />
+
+<br></br>
+
+#### Fog 雾气
+
+配合高斯模糊后处理模拟雾气
+
+- 将color buffer中的图像经过高斯模糊后处理后与原图像一起传入RainDrop shader
+- 将fogTrail作为遮罩，fogtrail滑过的地方采样清晰的\_clearTex图像，其他地方采样高斯模糊过的\_BlurredTex
+
+---
+
+- 高斯模糊 + 雨滴后处理脚本
+
+```c
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+[ExecuteInEditMode]
+public class Post : MonoBehaviour
+{
+    [Header("Shader Assignment")]
+    public Shader BlurShader;
+    public Shader RainShader;
+
+    [Space]
+    [Header("Blur Settings")]
+    [Range(1.0f, 10.0f)]
+    public float BlurRadius = 1.0f;      //模糊半径
+    [Range(0.0f, 5.0f)]
+    public int downSample = 2;      //降分辨率
+    [Range(1.0f, 5.0f)]
+    public int iteration = 1;      //迭代次数
+
+    [Space]
+    [Header("Raindrop Settings")]
+    [Range(0.5f, 2.0f)]
+    public float RainDropSize = 0.7f;       // 对应 _Size
+    [Range(-5.0f, 5.0f)]
+    public float distortion = 1f;   // 对应 _Distortion
+    [Range(0.0f, 1.0f)]
+    public float darkness = 0.5f;
+
+    private void OnRenderImage(RenderTexture src, RenderTexture dest)
+    {
+        // 高斯模糊 -----------------------------
+        Material blurMaterial = new Material(BlurShader);
+        RenderTexture buffer=RenderTexture.GetTemporary(src.width, src.height);
+        Graphics.Blit(src, buffer);
+
+        //申请RenderTexture，RT的分辨率按照downSample降低
+        RenderTexture rt1 = RenderTexture.GetTemporary(buffer.width >> downSample, buffer.height >> downSample, 0, buffer.format);
+        RenderTexture rt2 = RenderTexture.GetTemporary(buffer.width >> downSample, buffer.height >> downSample, 0, buffer.format);
+
+        //直接将原图拷贝到降分辨率的RT上
+        Graphics.Blit(buffer, rt1);
+
+        //迭代
+        for (int i = 0; i < iteration; i++)
+        {
+            //第一次高斯模糊，设置offsets，竖向模糊
+            blurMaterial.SetVector("_offsets", new Vector4(0, BlurRadius, 0, 0));
+            Graphics.Blit(rt1, rt2, blurMaterial);
+            //第二次高斯模糊，设置offsets，横向模糊
+            blurMaterial.SetVector("_offsets", new Vector4(BlurRadius, 0, 0, 0));
+            Graphics.Blit(rt2, rt1, blurMaterial);
+        }
+
+        //将最后结果传递到destination
+        Graphics.Blit(rt1, buffer);
+
+        //释放申请的两块RenderBuffer内容
+        RenderTexture.ReleaseTemporary(rt1);
+        RenderTexture.ReleaseTemporary(rt2);
+
+        // 雨滴 -----------------------------
+        Material rainMaterial = new Material(RainShader);
+
+        // Set the properties
+        rainMaterial.SetFloat("_Size", RainDropSize);
+        rainMaterial.SetFloat("_Distortion", distortion);
+        rainMaterial.SetFloat("_Darkness", darkness);
+        rainMaterial.SetTexture("_BlurredTex", buffer); // 传入模糊后的图像
+
+        Graphics.Blit(src, dest, rainMaterial);
+        RenderTexture.ReleaseTemporary(buffer);
+    }
+}
+
+```
+
+---
+
+将FogTrail作为蒙版，采样两张color buffer图
+
+- fogtrail滑过的地方采样清晰的\_clearTex图像
+- 其他地方采样高斯模糊过的\_BlurredTex
+
+```c
+fixed4 clearTex = tex2D(_MainTex, i.uv + offset * _Distortion);
+fixed4 blurredTex = tex2D(_BlurredTex,i.uv + offset * _Distortion) * _Darkness;
+col = lerp(blurredTex, clearTex,fogTrail);
+return col;
+
+```
+
+- fogTrail
+
+<img
+	src='/assets/Effects/Raindrops/img26.png'
+	alt='img26'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- raindrop + gaussian blur
+
+<img
+	src='/assets/Effects/Raindrops/img27.png'
+	alt='img27'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<LocalVideo src='/assets/Effects/Raindrops/video8.mp4' alt='video8' />
+
+<br></br>
+
+#### 增加雨滴层次
+
+将雨滴移动到 _rainDropLayer()_ 函数中
+
+- 返回offset
+- 返回fogTrail
+
+```c
+// 雨滴层次
+float3 rainDropLayer(float2 UV, float t)
+{
+
+    float2 resolution = float2(16,9) / 2; // 根据屏幕分辨率调整
+    float2 aspect = float2(2,1); // 将u压缩成1/4， v不变
+    float2 uv = UV * _Size * aspect * resolution;
+    uv.y += t * 0.25; // - 通过向下移动方格来抵消雨滴上移的效果
+    float2 gv = frac(uv) - 0.5; // 取小数并将中心点从左下角移动到中心
+    float2 id = floor(uv);
+
+    // 通过随机数给每一个box增加时间偏移值
+    float random = genRandomNum(id); // [0,1]
+    t += random * 2 * PI; // sin wave phase
+
+    // 通过xy来控制雨点的位置
+    float w = UV.y * 10; // wiggles
+    float x = (random - 0.5) * 0.8; // [-0.4, 0.4]
+    x += (0.4 - abs(x)) * sin(3 * w) * pow(sin(w), 6) * 0.43;// 0 - 0.4 - 0 边缘为0，中间最大
+    float y = -sin(t + sin(t + sin(t) * 0.5)) * 0.43;
+    y -= (gv.x-x) * (gv.x-x); //调整雨滴形状
+
+    float2 dropPos = (gv - float2(x,y)) / aspect;
+    float drop = smoothstep(0.05, 0.03, length(dropPos));
+
+    float2 trailPos = (gv - float2(x, t * 0.25)) / aspect;
+    trailPos.y = (frac(trailPos.y * 8) - 0.5) / 8;
+    float trail = smoothstep(0.03, 0.01, length(trailPos));
+    float fogTrail = smoothstep(-0.05, 0.05, dropPos.y); //fog
+    fogTrail *= smoothstep(0.5, y, gv.y); //渐隐效果
+    trail *= fogTrail; //fog作为雨滴拖尾的mask
+    fogTrail *= smoothstep(0.05, 0.04, abs(dropPos.x)); //裁剪左右两侧fog
+
+    // 雨滴扭曲
+    float2 offset = drop * dropPos + trail * trailPos;
+
+    return float3(offset, fogTrail);
+}
+```
+
+```c
+fixed4 frag (v2f i) : SV_Target
+{
+    float4 col = 0;
+    float t = _Time.y;
+
+    float3 drops = rainDropLayer(i.uv, t);
+    float2 offset = drops.xy;
+    float fogTrail = drops.z;
+
+    fixed4 clearTex = tex2D(_MainTex, i.uv + offset * _Distortion);
+    fixed4 blurredTex = tex2D(_BlurredTex,i.uv + offset * _Distortion) * _Darkness;
+    col = lerp(blurredTex, clearTex,fogTrail);
+    return col;
+}
+```
+
+---
+
+添加更多雨滴
+
+```c
+float3 drops = rainDropLayer(i.uv, t);
+drops += rainDropLayer(i.uv * 1.66 + 1.54, t);
+drops += rainDropLayer(i.uv * 0.88 - 7.26, t)
+```
+
+<LocalVideo src='/assets/Effects/Raindrops/video9.mp4' alt='video9' />
+
+<br></br>
+
+### 相关资源
+
+Making a rainy window in Unity
+
+- https://www.youtube.com/watch?v=0flY11lVCwY&t=378s
+
+高品质后处理：十种图像模糊算法的总结与实现
+
+- https://zhuanlan.zhihu.com/p/125744132
