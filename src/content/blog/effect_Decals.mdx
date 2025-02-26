@@ -1,0 +1,317 @@
+---
+heroImage: /src/assets/images/cover_Decals.png
+category: 实践记录
+description: Unity下不同Decals的介绍与Depth Decals的实现
+pubDate: 2025-01-25T16:00:00.000Z
+tags:
+  - 渲染效果
+title: 深度贴花 Depth Decals
+---
+
+import LocalVideo from '../../components/LocalVideo.astro'
+
+<LocalVideo src='/assets/Effects/Decals/video0.mp4' alt='video1' />
+
+### Decals介绍
+
+#### 简介
+
+<img
+	src='/assets/Effects/Decals/img1.png'
+	alt='img1'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+Decals（贴花）是一种在计算机图形学中用于将2D图像或纹理应用到3D模型表面的技术。它们常用于增强视觉效果，如添加标志、污渍、弹孔、涂鸦等细节，而无需修改模型的几何结构。
+
+- 2D图像通过投影或UV映射附着在3D模型上
+- 在复杂表面上可能出现解封或扭曲
+- 多个Decals重叠时，需要处理优先级与混合
+
+---
+
+#### Decals的不同实现
+
+**模型通过第二套UV实现Decals**
+
+直接在模型的同一套Shader中添加Decals贴图，使用第二套uv控制Decal的位置、缩放与动画等效果
+
+- 通过Alpha Blend等叠加模式使Decals与模型原贴图颜色混合
+
+<img
+	src='/assets/Effects/Decals/img2.png'
+	alt='img2'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+优点：可以通过第二套uv的Tiling和Offset来修改Decals显示的内容
+
+缺点：需要模型有第二套uv； 并且如果希望Decals贴在两个分离模型的连接处比较麻烦
+
+<br />
+<br />
+
+**通过透明面片实现Decals**
+
+使用一个面片采样Decals纹理，将面片放置于物体表面需要贴花的位置，并通过Alpha Blending将该面片的Decals与物体表面颜色混合
+
+<img
+	src='/assets/Effects/Decals/img3.png'
+	alt='img3'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+优点：简单，可以处理不同模型接缝处的贴花效果
+
+缺点：Decals形状受限于面片形状，如果是曲面物体表面的贴花，还需要单独制作曲面面片
+
+<br />
+<br />
+
+**Decals Projector**
+
+Unity中的贴花projector就是通过Projector Shader来实现贴合物体表面形状的贴花效果
+
+<br />
+<br />
+
+**深度贴花 Depth Decals**
+
+通过在渲染时重构世界坐标（获取屏幕空间当前片元深度对应的Mesh表面的世界坐标）来计算出需要渲染贴花的片元
+
+### 深度贴花的实现原理
+
+#### 实现思路
+
+目标：将Decals面片贴在球体上
+
+<img
+	src='/assets/Effects/Decals/img4.png'
+	alt='img4'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<img
+	src='/assets/Effects/Decals/img5.png'
+	alt='img5'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- 从场景深度缓冲中的获取当前屏幕空间下片元所对应的 _深度值_
+- 通过 _深度重建观察空间_ 求出该深度所对应的物体表面点在观察空间下的位置
+- 进一步将该球体表面点从观察空间 _转换到贴花面片Mesh的本地空间下_
+- 再用转换到 _本地空间下的位置坐标的xy_ 来采样贴花贴图
+
+#### 深度重建观察空间
+
+已知：
+
+- Decals面片上当前片元观察空间下的坐标值 $$P_x,P_y,P_z$$
+- 当前片元所存储的深度值 $$W_z$$
+
+求：
+
+- 当前偏远所存储的深度值对应的点在观察空间下的坐标值 $$W_x,W_y$$
+
+<img
+	src='/assets/Effects/Decals/img6.png'
+	alt='img6'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+### 具体实现
+
+#### 基础实现
+
+**~~将Shader设置为半透明队列~~**
+
+不进行深度写入
+
+```c
+{
+    "Queue" = "Transparent"
+    "RenderType"="Transparent"
+    "RenderPipeline"="UniversalRenderPipeline"
+}
+```
+
+<br />
+<br />
+
+**~~深度重建观察空间~~**
+
+根据深度值所对应的点求出其在观察空间下的坐标
+
+声声明深度图并通过屏幕UV采样深度图
+
+将从深度图中采样到的深度值转换成线性深度
+
+```c
+{
+  // Fragment Shader
+  float2 screenUV = IN.positionHCS.xy / _ScreenParams.xy;
+  half depthMap = SAMPLE_TEXTURE2D(_CameraDepthTexture, sampler_CameraDepthTexture, screenUV);
+  half sceneDepth = LinearEyeDepth(depthMap, _ZBufferParams);
+}
+```
+
+---
+
+获取Decals面片上当前片元在观察空间下的坐标
+
+```c
+{
+  // Vertex Shader
+  OUT.positionVS = TransformWorldToView(TransformObjectToWorld(IN.positionOS));
+}
+```
+
+---
+
+在片元着色器中构建场景深度值所对应的mesh顶点在观察空间下的坐标
+sceneVS代表当前场景深度所对应的物体表面的点在观察空间下的位置坐标
+根据相似三角形求出sceneVS的xy值
+
+- $$W_x = \frac{P_xW_z}{-P_z} $$
+- $$W_y = \frac{P_yW_z}{-P_z} $$
+
+```c
+{
+  // Frgament Shader
+  // sceneDepth深度所对应的物体表面顶点位置坐标
+  float4 sceneVS = 1;
+  sceneVS.z = sceneDepth; // z值等于深度缓冲区中的值
+  sceneVS.xy = ( IN.positionVS.xy * sceneVS.z ) / -IN.positionVS.z;
+}
+```
+
+<br />
+<br />
+
+**~~将观察空间下的坐标转换到Decals面片的本地空间~~**
+
+从观察空间到世界空间
+从世界空间到本地空间
+
+```c
+{
+  // 从观察空间变换到本地空间
+  float3 sceneWS = mul(unity_CameraToWorld, sceneVS);
+  float3 sceneOS = mul(unity_WorldToObject, float4(sceneWS,1));
+}
+```
+
+<br />
+<br />
+
+**~~本地坐标区间重映射~~**
+由于面片的本地坐标起始点在中心，则x和y的区间是[-0.5,0.5]，将其转换到[0,1]便于后续采样
+
+<img
+	src='/assets/Effects/Decals/img7.png'
+	alt='img7'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+```c
+{
+  // Fragment Shader
+  // [-0.5,0.5] -> [0,1]
+  sceneOS.xy += 0.5;
+}
+```
+
+<br />
+<br />
+
+**~~贴图采样~~**
+
+用sceneOS的x和y值采样Decals贴花
+
+```c
+{
+  half4 basemap= SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, sceneOS.xy);
+}
+```
+
+<br />
+<br />
+
+**~~调整混合方式~~**
+
+Blend One One
+处理颜色与雾效的混合
+
+```c
+{
+  Blend One One
+}
+```
+
+```c
+{
+  // 针对blend one one 处理雾效混合
+  half4 color = basemap * _BaseColor;
+  color.rgb *= saturate(lerp(1,0,IN.fogCoord));
+}
+```
+
+#### 优化修复
+
+**~~修复面片区域外无渲染画面所造成的裁切问题~~**
+
+由于面片区域外无渲染片元，当物体超出Decals片面所覆盖的区域时，就会出现边缘截断的现象
+
+<img
+	src='/assets/Effects/Decals/img8.png'
+	alt='img8'
+	style='width: 50%; height: auto; display:block; margin: 0 auto;'
+/>
+
+将面片换成 _cube_ ，只需要确保物体在Cube区域内即可正确渲染
+
+<img
+	src='/assets/Effects/Decals/img9.png'
+	alt='img9'
+	style='width: 50%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+**当前效果**
+
+<LocalVideo src='/assets/Effects/Decals/video2.mp4' alt='video2' />
+
+<br />
+<br />
+
+**~~修复采样拉伸问题~~**
+
+<LocalVideo src='/assets/Effects/Decals/video3.mp4' alt='video3' />
+
+**问题**
+
+<img
+	src='/assets/Effects/Decals/img10.png'
+	alt='img10'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- 因为我们使用的是深度重建的物体空间位置，使用其中的xy轴作为纹理坐标进行的采样，所以当物体的x轴坐标或y轴坐标一样时，采样的位置就会相同，继而产生拉伸的效果
+- 如图中黄色区域的每一条竖线上的点都有着相同的y值或x值
+
+<br></br>
+
+**修复思路**
+
+- Depth Normal Decal
+- 由于采样面是Cube的xz轴，而与xz面垂直的面会在贴花时产生拉伸，所以可以直接根据法线方向把与xz轴垂直的面（即与y轴平行的面）剔除掉
+- 判断当前像素点（投影处物体表面）的法线方向，然后把一个物体空间的y轴方向（0，1，0）转化到当前屏幕法线所在的空间，然后进行dot计算夹角，如果接近垂直的阈值，那么直接Clip掉
+
+<br></br>
+
+**实现步骤**
+
+- 使用DepthNormalTexture获得观察空间下的全屏法线
+- 将（0，1，0）从本地空间转化到观察空间
+- 点乘物体表面法线与 vector3(0,1,0)
