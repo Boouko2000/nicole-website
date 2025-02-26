@@ -14,7 +14,7 @@ title: 快速次表面散射模拟
 
 The quality of allowing light to pass partially and diffusely inside media.
 
-![img1](../../assets/images/Effects/post_3S/aecd5a23-4450-48dc-ab2b-fe7b214057e8.png)
+![img1](../../assets/images/Effects/post_3S/img1.png)
 
 ---
 
@@ -31,13 +31,7 @@ The quality of allowing light to pass partially and diffusely inside media.
 
 **光线的重新射出**： 部分光线在经过多次散射后会回到物体表面，_并以新的方向射出_。( BTDF)
 
-<img
-	src='../../assets/images/Effects/post_3S/7782f77d-741e-45ca-910d-1a77dc315456.png'
-	alt='img2'
-	style='width: 50%; height: auto; display: block; margin: 0 auto;'
-/>
-
----
+![img2](../../assets/images/Effects/post_3S/img2.png)
 
 **光线的传播与和不同介质的交互模型**
 
@@ -46,11 +40,7 @@ The quality of allowing light to pass partially and diffusely inside media.
 | **定义**     | 表面反射 | 表面透射 |
 | **光学现象** | 反射     | 透射     |
 
-<img
-	src='src/assets/images/Effects/post_3S/img3.png'
-	alt='img3'
-	style='width: 50%; height: auto; display: block; margin: 0 auto;'
-/>
+![img3](../../assets/images/Effects/post_3S/img3.png)
 
 ### 实现原理
 
@@ -58,11 +48,7 @@ The quality of allowing light to pass partially and diffusely inside media.
 
 > 虽然通过精准 BRDF + BSSRDF + BTDF 的数学模型来模拟 3S 的效果很好，但是性能消耗大
 
-<img
-	src='nicole-website/src/assets/images/Effects/post_3S/img4.png'
-	alt='img4'
-	style='width: 100%; height: auto; display: block; margin: 0 auto;'
-/>
+![img4](../../assets/images/Effects/post_3S/img4.png)
 
 **厚度**
 
@@ -83,15 +69,13 @@ The quality of allowing light to pass partially and diffusely inside media.
 
 原理
 
-<img
-	src='/src/assets/images/Effects/post_3S/img5.png'
-	alt='img5'
-	style='width: 100%; height: auto; display: block; margin: 0 auto;'
-/>
+![img5](../../assets/images/Effects/post_3S/img5.png)
 
 - 对于 translucent 材料来说，一盏灯光需要计算两种效果的实现: 正面照明（左）& 背面照明（右）
 
 > **为什么用 -L 来模拟散射后的出射光是合理的近似？尽管散射会随机改变光线的方向，但对于大多数半透明材料来说散射光线在经过多次散射后，整体方向会偏向光源的原始方向。这种现象被称为前向散射**，是许多材料（特别是有机材料）的一种常见性质。
+
+![img5](../../assets/images/Effects/post_3S/img6.png)
 
 - 表面（红点）处于物体的背光处，应该受到-L光源的影响
 - 当观测方向与光线方向对齐（右）时，应该能够看到背光的最大效果。当观测方向与光线方向垂直时，背光效果应该最小
