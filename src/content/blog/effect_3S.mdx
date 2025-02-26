@@ -1,8 +1,8 @@
 ---
-heroImage: /src/assets/images/cover_3S.png
+heroImage: /src/assets/images/Effects/post_3S/cover.png
 category: 实践记录
 description: Unity URP管线下的3S材质快速模拟
-pubDate: 2022-07-01T22:00:00.000Z
+pubDate: 2024-02-25T16:00:00.000Z
 tags:
   - 效果实现
 title: 快速次表面散射模拟
@@ -13,10 +13,7 @@ title: 快速次表面散射模拟
 #### 3S材料
 
 The quality of allowing light to pass partially and diffusely inside media.
-
 ![img1](../../assets/images/Effects/post_3S/img1.png)
-
----
 
 #### 图形学中的3S模拟
 
@@ -31,7 +28,7 @@ The quality of allowing light to pass partially and diffusely inside media.
 
 **光线的重新射出**： 部分光线在经过多次散射后会回到物体表面，_并以新的方向射出_。( BTDF)
 
-![img2](../../assets/images/Effects/post_3S/img2.png)
+![img1](../../assets/images/Effects/post_3S/img2.png)
 
 **光线的传播与和不同介质的交互模型**
 
@@ -40,7 +37,7 @@ The quality of allowing light to pass partially and diffusely inside media.
 | **定义**     | 表面反射 | 表面透射 |
 | **光学现象** | 反射     | 透射     |
 
-![img3](../../assets/images/Effects/post_3S/img3.png)
+![img1](../../assets/images/Effects/post_3S/img3.png)
 
 ### 实现原理
 
@@ -48,7 +45,7 @@ The quality of allowing light to pass partially and diffusely inside media.
 
 > 虽然通过精准 BRDF + BSSRDF + BTDF 的数学模型来模拟 3S 的效果很好，但是性能消耗大
 
-![img4](../../assets/images/Effects/post_3S/img4.png)
+![img1](../../assets/images/Effects/post_3S/img4.png)
 
 **厚度**
 
@@ -65,26 +62,77 @@ The quality of allowing light to pass partially and diffusely inside media.
 
 #### 模拟方法
 
-**背光模拟**
+**~~背光模拟~~**
 
-原理
+**原理**
 
-![img5](../../assets/images/Effects/post_3S/img5.png)
+![img1](../../assets/images/Effects/post_3S/img5.png)
 
 - 对于 translucent 材料来说，一盏灯光需要计算两种效果的实现: 正面照明（左）& 背面照明（右）
 
-> **为什么用 -L 来模拟散射后的出射光是合理的近似？尽管散射会随机改变光线的方向，但对于大多数半透明材料来说散射光线在经过多次散射后，整体方向会偏向光源的原始方向。这种现象被称为前向散射**，是许多材料（特别是有机材料）的一种常见性质。
+> **为什么用 -L 来模拟散射后的出射光是合理的近似？**
+>
+> 尽管散射会随机改变光线的方向，但对于大多数半透明材料来说散射光线在经过多次散射后，整体方向会偏向光源的原始方向。这种现象被称为前向**散射**，是许多材料（特别是有机材料）的一种常见性质。
 
-![img5](../../assets/images/Effects/post_3S/img6.png)
+![img1](../../assets/images/Effects/post_3S/img6.png)
 
 - 表面（红点）处于物体的背光处，应该受到-L光源的影响
 - 当观测方向与光线方向对齐（右）时，应该能够看到背光的最大效果。当观测方向与光线方向垂直时，背光效果应该最小
 
+**公式**
+
+```javascript
+V\cdot(-L)
+```
+
+- 当观察方向与-对齐时，即观察者与光源位于物体两侧时，散射光应该是最容易到达观察者的情况，这个情况下点积结果是 1
+- 这种方法可以直接衡量观察者和光源方向是否对称，非常适合用于背光模拟
+
 ---
 
-公式
+**~~法线扰动~~**
 
-$V\cdot(-L)$
+**原理**
+
+- 除了考虑视线方向与光源方向对背光效果的影响，物体表面的朝向，即物体的法线也应该对光线穿透物体后射出的角度有所影响
+- Subsurface distortion $$\delta $$
+- 参数 $$\delta$$的作用是使-L向表面法线 N 方向偏移，控制表面法线对出射光线的偏移强度
+
+**公式**
+
+![img1](../../assets/images/Effects/post_3S/img7.png)
+
+---
+
+**~~光效控制~~**
+
+**公式**
+
+![img1](../../assets/images/Effects/post_3S/img8.png)
+
+---
+
+**~~厚度模拟~~**
+
+**原理**
+
+- 背光的强度应该受到物体厚度的影响，理想情况下应该继续要知道光线在物体内部传播的路径距离，并将这个距离纳入到光照衰减的考虑中
+- 通过一张贴图来记录“物体厚度”，并通过厚度来表示光在物体内部传播路径的距离长短 - _Local Thickness Map_
+- 真实的光在物体内部的路径长度与光源的入射方向有关，所以这个“物体的厚度”其实取决于光线的入射角度。所以通过Thickness map来模拟厚度并不真实准确，但能够一定程度上给出正确的视觉效果
+
+**Local Thickness Map**
+
+- 通过翻转法线计算物体 AO （Normal-inverted computation of ambient occlusion）来模拟厚度，并烘焙这个特殊的 AO 贴图
+  - 翻转物体表面法线
+  - 渲染 AO
+  - 翻转 AO 贴图颜色并存储
+- 这个 AO 贴图甚至可以不局限于灰度图，可以用于光线从透射穿过物体后发散出来的颜色
+
+> **翻转法线烘焙的 AO 贴图**
+>
+> AO 贴图用于表示环境中有多少光能够到达表面上的某一点翻转法线后烘焙的 AO 贴图可以用于表示物体内部的光线传播情况
+
+![img1](../../assets/images/Effects/post_3S/img9.png)
 
 ### 具体实现
 

@@ -102,6 +102,23 @@
 		color: #c2c2c2; /* 设置列表项文本颜色 */
 	}
 
+  	/* 修改 Markdown 删除线的样式 */
+  	.prose del {
+	text-decoration: none; /* 确保文本有删除线 */
+	font-weight: bold; /* 设置删除线文本的粗细 */
+	background-color: #e7e7e7; /* 设置删除线文本所在行的背景颜色 */
+	display: inline-block; /* 确保背景颜色应用于整行 */
+	width: 100%; /* 确保背景颜色应用于整行 */
+	border-radius: 5px; /* 设置圆角 */
+	padding: 0.2em 0.5em; /* 设置内边距 */
+	}
+
+	/* 深色模式下的删除线样式 */
+	.dark .prose del {
+		color: #ffffff; /* 设置深色模式下删除线文本的颜色 */
+		background-color: #363636; /* 设置深色模式下删除线文本所在行的背景颜色 */
+	}
+
 
 }
 
