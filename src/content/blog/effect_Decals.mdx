@@ -79,6 +79,8 @@ Unity中的贴花projector就是通过Projector Shader来实现贴合物体表�
 
 通过在渲染时重构世界坐标（获取屏幕空间当前片元深度对应的Mesh表面的世界坐标）来计算出需要渲染贴花的片元
 
+<br></br>
+
 ### 深度贴花的实现原理
 
 #### 实现思路
@@ -118,6 +120,8 @@ Unity中的贴花projector就是通过Projector Shader来实现贴合物体表�
 	alt='img6'
 	style='width: 100%; height: auto; display:block; margin: 0 auto;'
 />
+
+<br></br>
 
 ### 具体实现
 
@@ -315,3 +319,23 @@ Blend One One
 - 使用DepthNormalTexture获得观察空间下的全屏法线
 - 将（0，1，0）从本地空间转化到观察空间
 - 点乘物体表面法线与 vector3(0,1,0)
+
+<br></br>
+
+### 相关资源
+
+Unity Decal 贴花基础入门
+
+- https://zhuanlan.zhihu.com/p/666213716
+
+Unity中URP下实现深度贴花
+
+- https://blog.csdn.net/qq_51603875/article/details/135554964
+
+Unity Shader-Decal贴花
+
+- https://blog.csdn.net/puppet_master/article/details/84310361?spm=1001.2101.3001.6650.1&utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-1-84310361-blog-78712346.235%5Ev43%5Epc_blog_bottom_relevance_base5&depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-1-84310361-blog-78712346.235%5Ev43%5Epc_blog_bottom_relevance_base5&utm_relevant_index=2
+
+在Unity中使用贴花
+
+- https://blog.csdn.net/qq_37270421/article/details/130219219?spm=1001.2101.3001.6661.1&utm_medium=distribute.pc_relevant_t0.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-1-130219219-blog-78712346.235%5Ev43%5Epc_blog_bottom_relevance_base5&depth_1-utm_source=distribute.pc_relevant_t0.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-1-130219219-blog-78712346.235%5Ev43%5Epc_blog_bottom_relevance_base5&utm_relevant_index=1
