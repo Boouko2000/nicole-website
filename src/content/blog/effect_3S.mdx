@@ -10,6 +10,8 @@ title: 快速次表面散射模拟
 
 import LocalVideo from '../../components/LocalVideo.astro'
 
+<LocalVideo src='/assets/Effects/3S/video5.mp4' alt='video5' />
+
 ### 效果介绍
 
 #### 3S材料
@@ -19,7 +21,7 @@ The quality of allowing light to pass partially and diffusely inside media.
 <img
 	src='/assets/Effects/3S/img1.png'
 	alt='img1'
-	style='width: 50%; height: auto; display:block; margin: 0 auto;'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
 />
 
 #### 图形学中的3S模拟
@@ -35,7 +37,11 @@ The quality of allowing light to pass partially and diffusely inside media.
 
 **光线的重新射出**： 部分光线在经过多次散射后会回到物体表面，_并以新的方向射出_。( BTDF)
 
-![img1](../../assets/images/Effects/post_3S/img2.png)
+<img
+	src='/assets/Effects/3S/img2.png'
+	alt='img2'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
 
 **光线的传播与和不同介质的交互模型**
 
@@ -44,7 +50,11 @@ The quality of allowing light to pass partially and diffusely inside media.
 | **定义**     | 表面反射 | 表面透射 |
 | **光学现象** | 反射     | 透射     |
 
-![img1](../../assets/images/Effects/post_3S/img3.png)
+<img
+	src='/assets/Effects/3S/img3.png'
+	alt='img3'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
 
 ### 实现原理
 
@@ -52,7 +62,11 @@ The quality of allowing light to pass partially and diffusely inside media.
 
 > 📣 虽然通过精准 BRDF + BSSRDF + BTDF 的数学模型来模拟 3S 的效果很好，但是性能消耗大
 
-![img1](../../assets/images/Effects/post_3S/img4.png)
+<img
+	src='/assets/Effects/3S/img4.png'
+	alt='img4'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
 
 **厚度**
 
@@ -73,7 +87,11 @@ The quality of allowing light to pass partially and diffusely inside media.
 
 **原理**
 
-![img1](../../assets/images/Effects/post_3S/img5.png)
+<img
+	src='/assets/Effects/3S/img5.png'
+	alt='img5'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
 
 - 对于 translucent 材料来说，一盏灯光需要计算两种效果的实现: 正面照明（左）& 背面照明（右）
 
@@ -81,19 +99,21 @@ The quality of allowing light to pass partially and diffusely inside media.
 >
 > 尽管散射会随机改变光线的方向，但对于大多数半透明材料来说散射光线在经过多次散射后，整体方向会偏向光源的原始方向。这种现象被称为前向**散射**，是许多材料（特别是有机材料）的一种常见性质。
 
-![img1](../../assets/images/Effects/post_3S/img6.png)
+<img
+	src='/assets/Effects/3S/img6.png'
+	alt='img6'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
 
 - 表面（红点）处于物体的背光处，应该受到-L光源的影响
 - 当观测方向与光线方向对齐（右）时，应该能够看到背光的最大效果。当观测方向与光线方向垂直时，背光效果应该最小
 
 **公式**
 
-```javascript
-V\cdot(-L)
-```
+$$ V\cdot(-L) $$
 
-- 当观察方向与-对齐时，即观察者与光源位于物体两侧时，散射光应该是最容易到达观察者的情况，这个情况下点积结果是 1
-- 这种方法可以直接衡量观察者和光源方向是否对称，非常适合用于背光模拟
+- 当观察方向与 $$-L $$对齐时，即观察者与光源位于物体两侧时，散射光应该是最容易到达观察者的情况，这个情况下点积结果是 1
+- 这种方法可以直接衡量*观察者和光源方向是否对称*，非常适合用于*背光模拟*
 
 ---
 
@@ -101,13 +121,22 @@ V\cdot(-L)
 
 **原理**
 
-- 除了考虑视线方向与光源方向对背光效果的影响，物体表面的朝向，即物体的法线也应该对光线穿透物体后射出的角度有所影响
+- 除了考虑视线方向与光源方向对背光效果的影响，物体表面的朝向，_即物体的法线也应该对光线穿透物体后射出的角度有所影响_
 - Subsurface distortion $$\delta $$
-- 参数 $$\delta$$的作用是使-L向表面法线 N 方向偏移，控制表面法线对出射光线的偏移强度
+- _参数 $$\delta$$的作用是使-L向表面法线 N 方向偏移_，控制表面法线对出射光线的偏移强度
 
 **公式**
 
-![img1](../../assets/images/Effects/post_3S/img7.png)
+- $$I_{back} = V \cdot -normalize(L+N\delta)$$
+  - 当 $$\delta=0$$，得到 $$I_{back} = V \cdot -L$$
+  - 当 $$\delta=1$$，得到 $$I_{back} = V \cdot -normalize(L+N)$$即 $$I_{back} = V \cdot -H$$
+  - 半程向量 $$H = (L + N)$$
+
+<img
+	src='/assets/Effects/3S/img7.png'
+	alt='img7'
+	style='width: 30%; height: auto; display:block; margin: 0 auto;'
+/>
 
 ---
 
@@ -115,7 +144,10 @@ V\cdot(-L)
 
 **公式**
 
-![img1](../../assets/images/Effects/post_3S/img8.png)
+$$I_{back} = saturate(V \cdot-|L+N\delta|)^p \cdot s$$
+
+- p 控制光的集中度和锐利度
+- s 控制整体的光强
 
 ---
 
@@ -139,13 +171,21 @@ V\cdot(-L)
 >
 > AO 贴图用于表示环境中有多少光能够到达表面上的某一点翻转法线后烘焙的 AO 贴图可以用于表示物体内部的光线传播情况
 
-![img1](../../assets/images/Effects/post_3S/img9.png)
+<img
+	src='/assets/Effects/3S/img9.png'
+	alt='img9'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
 
 ### 具体实现
 
 #### 3S效果公式
 
 > 📣 **3S = 背光 + 法线扰动 + 光效控制 + 厚度模拟**
+
+背光 + 法线扰动：$$I_{back} = saturate(V \cdot-|L+N\delta|)^p \cdot s$$
+
+厚度模拟：Local Thickness map
 
 ---
 
@@ -190,8 +230,130 @@ half4 frag(Varyings i) : SV_Target
 }
 ```
 
-Normal Distortion = 0时，即无法线扰动，网格受到背光影响但是法线对出射光的方向无干扰，物体缺少细节
+<LocalVideo src='/assets/Effects/3S/video2.mp4' alt='video2' />
 
-$$ V\cdot(-L) $$ ss
+Normal Distortion = 0时，即无法线扰动，网格受到背光影响但是法线对出射光的方向无干扰，物体缺少细节 $$I_{back} = saturate(V \cdot-L)$$ - Normal Distortion = 1时，法线扰动最大，出射光会受到表面法线方向的影响并向法线方向偏移 $$I_{back} = saturate(V \cdot-|L+N|)$$
+
+---
+
+**光效控制**
+
+$$ I\_{back} = saturate(V \cdot-|L+N\delta|)^p \cdot s $$
+
+- p 光集中度
+- s 光强
+
+```c
+half3 backLight = pow(saturate(dot(V, -halfNL)), _BackLightPower) * _BackLightIntensity;
+```
+
+<LocalVideo src='/assets/Effects/3S/video3.mp4' alt='video3' />
+
+- Back Light Power 控制光的集中
+- Back Light Intensity控制光强
+
+---
+
+**基础光照**
+
+Diffuse + Specular
+
+```c
+half4 frag(Varyings i) : SV_Target
+{
+    half4 color;
+    Light mainLight = GetMainLight();
+
+    // 正面光照 -----------------------------
+    // Lambert diffuse
+    half3 albedo = tex2D(_MainTex, i.uv) * _Tint.rgb;
+    half3 N = normalize(i.normalWS);
+    half3 L = mainLight.direction;
+    half3 diffuse = saturate(dot(N,L));
+    diffuse *= mainLight.color * albedo; // diffuse = lightColor * albedo * NdotL
+
+    // Blinn Phong specular
+    // specular = (NdotH)^_Smoothness
+    half3 V = _WorldSpaceCameraPos - i.positionWS;
+    half3 H = normalize(V + L);
+    half3 specular = pow(saturate(dot(N, H)), _Glossiness);
+    specular *= mainLight.color * _SpecularColor;
+
+    // combination
+    color = float4(diffuse + specular,1);
+    return color;
+}
+```
+
+<LocalVideo src='/assets/Effects/3S/video4.mp4' alt='video4' />-
+当前混合结果（只有一盏主光源，整体较暗）
+
+---
+
+**厚度贴图制作**
+
+<img
+	src='/assets/Effects/3S/img10.png'
+	alt='img10'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- AO节点勾选Inside来翻转烘焙时物体的法线
+- Invert Color颜色反相
+- 因为经过处理后以Emission材质输出，所以烘焙类型选择Emit而不是AO
+
+<img
+	src='/assets/Effects/3S/img11.png'
+	alt='img11'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+**厚度模拟**
+
+```c
+TEXTURE2D(_ThicknessTex);
+SAMPLER(sampler_ThicknessTex);
+```
+
+```c
+// 背面光照 -----------------------------
+half3 backLight = pow(saturate(dot(V, -halfNL)), _BackLightPower) * _BackLightIntensity; // dot(V, -H)
+half thickness = SAMPLE_TEXTURE2D(_ThicknessTex, sampler_ThicknessTex, i.uv); // 采样厚度贴图
+backLight *= thickness;
+backLight *= mainLight.color;
+return float4(backLight,1);
+```
+
+<img
+	src='/assets/Effects/3S/img12.png'
+	alt='img12'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
 
 ### 相关资源
+
+GDC 2011 - Approximating Translucency for a Fast, Cheap and Convincing Subsurface-Scattering Look
+
+- https://www.ea.com/frostbite/news/approximating-translucency-for-a-fast-cheap-and-convincing-subsurface-scattering-look
+- https://www.youtube.com/watch?v=MuIC9tX2Fmo
+
+Fast Subsurface Scattering in Unity
+
+- https://www.alanzucconi.com/2017/08/30/fast-subsurface-scattering-1/
+- https://www.alanzucconi.com/2017/08/30/fast-subsurface-scattering-2/
+
+快速次表面散射的原理与实现
+
+- https://www.bilibili.com/video/BV1FP4y1c7tY/?spm_id_from=333.337.top_right_bar_window_history.content.click&vd_source=12155d6952f8b14a857fc371d5743944
+
+SIGGRAPH 2008 - Real-Time Translucent Rendering Using GPU-based Texture Space Importance Sampling
+
+- https://people.cs.nycu.edu.tw/~wclin/translucency.html
+- SIGGRAPH_2008_Realtime Translucency Rendering.pdf
+
+使用翻转法线和 AO 烘焙获得模型厚度
+
+- [Maya] https://zhuanlan.zhihu.com/p/521955808
+- [Blender] https://www.bilibili.com/video/BV1tC41187ka/?spm_id_from=333.337.search-card.all.click&vd_source=12155d6952f8b14a857fc371d5743944

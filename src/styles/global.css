@@ -15,7 +15,6 @@
 	/* prose styles here */
 	.prose h1,
 	h2,
-	h3,
 	h5,
 	h6 {
 		@apply font-bold;
@@ -23,11 +22,16 @@
 		@apply text-zinc-800 dark:text-zinc-100   !important;
 	}
 
-
+	/* 修改 h3 的颜色 */
+	.prose h3 {
+		@apply text-4xl;
+        @apply text-blue-700 dark:text-blue-500 !important;   	}
+  
+	
 	.prose h4
 	{
 		@apply text-2xl;
-        @apply text-blue-600 dark:text-blue-300 !important; 
+        @apply text-blue-400 dark:text-blue-300 !important; 
 	}
 
 
