@@ -15,14 +15,12 @@ const posts = await getPosts(MAX_POSTS)
 	<ListCategories />
 
 	<div>
-		<h2 class='text-lg font-medium tracking-wide text-end'>Portfolio Showreel</h2>
-
-		<!-- Add your video here -->
-		<iframe
-			src='//player.bilibili.com/player.html?isOutside=true&aid=114041565480549&bvid=BV1reAfevEHb&cid=28505932761&p=1'
-			allowfullscreen='true'
-			class='w-full my-4'
-			style='height: 400px;'></iframe>
+		<div class='video-container'>
+			<iframe
+				src='//player.bilibili.com/player.html?isOutside=true&aid=114041565480549&bvid=BV1reAfevEHb&cid=28505932761&p=1'
+				allowfullscreen='true'
+				class='w-full'></iframe>
+		</div>
 
 		<div class='mb-8'></div>
 		<h2 class='text-lg font-medium tracking-wide text-end'>Latest Posts</h2>
@@ -47,3 +45,21 @@ const posts = await getPosts(MAX_POSTS)
 		)
 	}
 </script>
+
+<style>
+	.video-container {
+		position: relative;
+		width: 100%;
+		padding-bottom: 56.25%; /* 16:9 aspect ratio */
+		height: 0;
+		overflow: hidden;
+	}
+
+	.video-container iframe {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+	}
+</style>
