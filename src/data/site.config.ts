@@ -11,7 +11,7 @@ interface SiteConfig {
 
 export const siteConfig: SiteConfig = {
 	site: 'https://blog-template-gray.vercel.app/', // Write here your website url
-	author: 'Your Name', // Site author
+	author: 'Qianxi Liu', // Site author
 	title: "Nicole's Blog", // Site title.
 	description: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.', // Description to display in the meta tags
 	lang: 'en-GB',

@@ -1,8 +1,8 @@
 // List of categories for blog posts
 export const CATEGORIES = [
-	'Category 1',
-	'Category 2',
-	'Category 3',
-	'Category 4',
-	'Category 5'
+	'实践记录',
+	'技术美术',
+	'图形学与引擎',
+	'计算机理论',
+	'相关资源'
 ] as const

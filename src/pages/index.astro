@@ -6,7 +6,7 @@ import BaseLayout from '@/layouts/BaseLayout'
 import { getPosts } from '@/utils'
 import { siteConfig } from '@/site-config'
 
-const MAX_POSTS = 5 // max number of posts to show on the home page
+const MAX_POSTS = 5 // max number of posts to show on the Home page
 const posts = await getPosts(MAX_POSTS)
 ---
 
@@ -15,6 +15,16 @@ const posts = await getPosts(MAX_POSTS)
 	<ListCategories />
 
 	<div>
+		<h2 class='text-lg font-medium tracking-wide text-end'>Portfolio Showreel</h2>
+
+		<!-- Add your video here -->
+		<iframe
+			src='//player.bilibili.com/player.html?isOutside=true&aid=114041565480549&bvid=BV1reAfevEHb&cid=28505932761&p=1'
+			allowfullscreen='true'
+			class='w-full my-4'
+			style='height: 400px;'></iframe>
+
+		<div class='mb-8'></div>
 		<h2 class='text-lg font-medium tracking-wide text-end'>Latest Posts</h2>
 		<ListPosts FirstBig={true} posts={posts} />
 	</div>

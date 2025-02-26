@@ -1,17 +1,18 @@
 import TwitterIcon from '@/components/icons/TwitterIcon'
 import GithubIcon from '@/components/icons/GithubIcon'
+import BilibiliIcon from '@/components/icons/BilibiliIcon'
 
 // ADD YOUR SOCIAL NETWORKS HERE
 export const SOCIALNETWORKS = [
 	{
-		name: 'Github',
-		url: 'https://github.com/danielcgilibert/blog-template',
-		icon: GithubIcon
+		name: 'Bilibili',
+		url: 'https://space.bilibili.com/104600516',
+		icon: BilibiliIcon
 	},
 
 	{
-		name: 'Twitter',
-		url: 'https://github.com/danielcgilibert/blog-template',
-		icon: TwitterIcon
+		name: 'Github',
+		url: 'https://github.com/Boouko2000',
+		icon: GithubIcon
 	}
 ] as const
