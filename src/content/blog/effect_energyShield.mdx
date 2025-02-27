@@ -1,0 +1,458 @@
+---
+heroImage: /src/assets/images/cover_energyShield.png
+category: 实践记录
+description: Unity URP 管线下的能量罩shader实现
+pubDate: 2025-02-26T16:00:00.000Z
+tags:
+  - 渲染效果
+title: 能量罩
+---
+
+import LocalVideo from '../../components/LocalVideo.astro'
+
+<LocalVideo src='/assets/Effects/EnergyShield/video1.mp4' alt='video1' />
+
+### 效果分析
+
+#### 效果元素
+
+<img
+	src='/assets/Effects/EnergyShield/img1.png'
+	alt='img1'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+菲涅尔边缘光
+
+交界处高亮
+
+半透明蜂窝状流动纹理
+
+能量罩内物体扭曲效果
+
+### 具体实现
+
+#### 交界处高亮
+
+**~~基本逻辑~~**
+
+取深度缓冲中当前片元所对应的深度值（场景其他物体深度值）与片元在观察空间下的Z值（能量罩深度值）进行对比，如果相等则表示当前片元为交界处
+
+<br></br>
+**~~具体实现~~**
+
+能量罩自身处于透明渲染队列，不进行深度写入
+
+```cpp
+Tags
+{
+    "Queue" = "Transparent"
+    "RenderType"="Transparent"
+}
+```
+
+---
+
+获取场景深度图并转换到观察空间下的线性深度图
+
+```cpp
+TEXTURE2D(_CameraDepthTexture); SAMPLER(sampler_CameraDepthTexture);
+```
+
+```cpp
+// 【Fragment Shader】
+// 计算屏幕UV
+float2 screenUV = IN.positionHCS.xy / _ScreenParams.xy;
+// 通过屏幕UV采样深度图
+float depthMap = SAMPLE_TEXTURE2D(_CameraDepthTexture, sampler_CameraDepthTexture, screenUV);
+// 转换成线性深度
+half depth = LinearEyeDepth(depthMap, _ZBufferParams);
+```
+
+---
+
+计算当前模型片元观察空间下的Z值
+
+- 观察空间处于右手坐标系
+- 深度值为负值：需要取负
+
+```cpp
+// 【Vertex Shader】
+OUT.positionVS = TransformWorldToView(TransformObjectToWorld(IN.positionOS));
+
+```
+
+```cpp
+// 【Fragment Shader】
+// 获取本模型当前片元观察空间下的Z值 ----------------------
+float myDepth = -IN.positionVS.z;
+```
+
+---
+
+对比两个深度值
+
+- 交界处的深度差为0，所以呈现黑色
+
+<img
+	src='/assets/Effects/EnergyShield/img2.png'
+	alt='img2'
+	style='width: 60%; height: auto; display:block; margin: 0 auto;'
+/>
+
+```cpp
+float depthDifference = sceneDepth - myDepth;
+```
+
+---
+
+通过系数\_HighlightWidth来控制交界边缘的宽度
+
+<img
+	src='/assets/Effects/EnergyShield/img3.png'
+	alt='img3'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+```cpp
+depthDifference *= _HightlightWidth;
+```
+
+或
+
+```cpp
+depthDifference = pow(depthDifference, _HightlightWidth);
+```
+
+---
+
+将depthDifference的黑白反相，确保交界处是白色以方便后续做颜色处理
+
+添加高光颜色控制参数
+
+```cpp
+_HighlightColor ("HighlightColor", Color) = (1, 1, 1, 1)
+```
+
+```cpp
+depthDifference = 1 - depthDifference;
+half4 highlight = _HighlightColor * depthDifference;
+```
+
+<img
+	src='/assets/Effects/EnergyShield/img4.png'
+	alt='img4'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+#### 菲涅尔边缘光
+
+**~~基本逻辑~~**
+
+除了交界处高亮以外，能量罩的 _边缘处_ 也会比中心区域更亮
+
+通过 _菲涅尔_ 实现边缘光 $$ dot(N,V)$$
+
+<br></br>
+**~~具体实现~~**
+
+获取世界空间下的法线和视线向量，并点乘
+
+```cpp
+// 【顶点着色器】
+OUT.normalWS = TransformObjectToWorldNormal(IN.normal);
+```
+
+```cpp
+// 【片元着色器】
+// 菲涅尔边缘光 ----------------------------------------
+// V dot N
+float3 N = normalize(IN.normalWS); // 法向量
+float3 V = normalize(GetCameraPositionWS() - IN.positionWS.xyz);// 视线向量 = 摄像机位置 - 片元位置 （世界空间）
+float fresnel = saturate(1 - dot(N,V));
+fresnel = pow(fresnel, _RimLightWidth);
+half4 rimlight = fresnel * _RimlightColor;
+return rimlight;
+```
+
+<img
+	src='/assets/Effects/EnergyShield/img5.png'
+	alt='img5'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+半透明渲染
+
+```cpp
+Blend SrcAlpha OneMinusSrcAlpha
+```
+
+<img
+	src='/assets/Effects/EnergyShield/img6.png'
+	alt='img6'
+	style='width: 60%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+混合交界处高光与边缘光
+
+```cpp
+half4 color = highlight;
+color += rimlight;
+return color;
+```
+
+<img
+	src='/assets/Effects/EnergyShield/img7.png'
+	alt='img7'
+	style='width: 60%; height: auto; display:block; margin: 0 auto;'
+/>
+
+#### 蜂窝纹理
+
+**~~基本逻辑~~**
+
+采样蜂窝纹理作为basemap并调整透明度与原有边缘色叠加
+
+<br></br>
+**~~具体实现~~**
+
+采样纹理并叠加
+
+```cpp
+half4 basemap = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv) * _BaseColor;
+color += basemap * _BaseMapOpacity;
+```
+
+<LocalVideo src='/assets/Effects/EnergyShield/video2.mp4' alt='video1' />
+
+<br></br>
+#### 流光扭曲
+
+**~~基本逻辑~~**
+
+通过 _时间_ 控制UV移动实现流光
+
+_抓屏_
+
+使用 _纹理作为uv采样_ 抓屏结果以实现扭曲
+
+<br></br>
+**~~具体实现~~**
+
+利用UV的y轴制作动画实现流光效果
+
+```cpp
+// 流光效果 ------------------------------------------
+float flow = frac(IN.uv.y * _FlowLayer + _Time.y);
+return flow;
+```
+
+<LocalVideo src='/assets/Effects/EnergyShield/video3.mp4' alt='video1' />
+
+---
+
+获取抓屏纹理
+
+```cpp
+TEXTURE2D(_CameraOpaqueTexture); SAMPLER(sampler_CameraOpaqueTexture);
+```
+
+```cpp
+half4 opaquaTex = SAMPLE_TEXTURE2D(_CameraOpaqueTexture, sampler_CameraOpaqueTexture, screenUV);
+```
+
+---
+
+将basemap纹理作为采样抓屏的扭曲uv以实现扭曲效果
+
+```cpp
+float2 distortUV = lerp(screenUV, basemap.rr,_Distortion);
+half4 opaquaTex = SAMPLE_TEXTURE2D(_CameraOpaqueTexture, sampler_CameraOpaqueTexture, distortUV);
+```
+
+<img
+	src='/assets/Effects/EnergyShield/img8.png'
+	alt='img8'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+将流动UV作为扭曲的遮罩图（只在白色部分显示扭曲）
+
+```cpp
+distort *= flowMask;
+```
+
+basemap纹理也进行流动
+
+```cpp
+float2 flowUV = IN.uv + float2(0, _Time.x);
+half4 flowBasemap = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, flowUV);
+```
+
+<LocalVideo src='/assets/Effects/EnergyShield/video4.mp4' alt='video1' />
+
+---
+
+添加控制流光mask边缘软硬的参数
+
+```cpp
+float flowMask = frac(IN.uv.y * _FlowLayer + _Time.y) / _EdgeSoftness;
+```
+
+<LocalVideo src='/assets/Effects/EnergyShield/video5.mp4' alt='video1' />
+
+<br></br>
+
+### 代码整合
+
+<details>
+  <summary>完整代码</summary>
+  ```cpp
+  Shader "Custom/EngergyShield"
+{
+    Properties
+    {
+        _BaseColor ("Base Color", Color) = (1, 1, 1, 1)
+        _BaseMap ("Base Map", 2D) = "white" {}
+        _BaseMapOpacity("Base Map Opacity", range(0,1)) = 0.07
+        _HightlightWidth("Highlight Width", Float) = 5.3
+        [HDR]_HighlightColor ("HighlightColor", Color) = (1, 1, 1, 1)
+        _RimLightWidth("Rim Light Width", range(1,15)) = 1.8
+        [HDR]_RimLightColor("Rim Light Color", Color) = (1, 1, 1, 1)
+        _FlowLayer("Flow Layer", Range(5,10)) = 5
+        _Distortion("Distortion", Range(0,1)) = 0.5
+        _EdgeSoftness("Mask Edge Softness", Range(0,7)) = 3
+    }
+
+    SubShader
+    {
+        Tags
+        {
+            "Queue" = "Transparent"
+            "RenderType"="Transparent"
+            "RenderPipeline"="UniversalRenderPipeline"
+        }
+
+        Pass
+        {
+            Tags { "LightMode"="UniversalForward" }
+
+            Blend SrcAlpha OneMinusSrcAlpha
+            //Blend One One
+
+            HLSLPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Input.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+
+            TEXTURE2D(_BaseMap);            SAMPLER(sampler_BaseMap);
+            TEXTURE2D(_CameraDepthTexture); SAMPLER(sampler_CameraDepthTexture);
+            TEXTURE2D(_CameraOpaqueTexture); SAMPLER(sampler_CameraOpaqueTexture);
+
+            CBUFFER_START(UnityPerMaterial)
+            float4 _BaseColor;
+            float4 _BaseMap_ST;
+            float _HightlightWidth;
+            half4 _HighlightColor;
+            float _RimLightWidth;
+            float _BaseMapOpacity;
+            half4 _RimLightColor;
+            half _FlowLayer;
+            float _Distortion;
+            float _EdgeSoftness;
+            CBUFFER_END
+
+            struct Attributes
+            {
+                float4 positionOS   : POSITION;
+                float2 uv           : TEXCOORD0;
+                float3 normal       : NORMAL;
+            };
+
+            struct Varyings
+            {
+                float4 positionHCS  : SV_POSITION;
+                float2 uv           : TEXCOORD0;
+                float fogCoord      : TEXCOORD1;
+                float3 positionVS   : TEXCOORD2;
+                float3 normalWS     : TEXCOORD3;
+                float3 positionWS   : TEXCOORD4;
+            };
+
+            Varyings vert(Attributes IN)
+            {
+                Varyings OUT = (Varyings)0;
+                OUT.positionHCS = TransformObjectToHClip(IN.positionOS.xyz);
+                OUT.positionWS = TransformObjectToWorld(IN.positionOS);
+                OUT.positionVS = TransformWorldToView(OUT.positionWS);
+                OUT.uv = TRANSFORM_TEX(IN.uv, _BaseMap);
+                OUT.fogCoord = ComputeFogFactor(OUT.positionHCS.z);
+                OUT.normalWS = TransformObjectToWorldNormal(IN.normal);
+                return OUT;
+            }
+
+            half4 frag(Varyings IN) : SV_Target
+            {
+                // 交界处高亮 ----------------------------------------
+                // 获取当前片元对应的场景深度值
+                // 计算屏幕UV
+                float2 screenUV = IN.positionHCS.xy / _ScreenParams.xy;
+                // 通过屏幕UV采样深度图
+                float depthMap = SAMPLE_TEXTURE2D(_CameraDepthTexture, sampler_CameraDepthTexture, screenUV);
+                // 转换成线性深度
+                half sceneDepth = LinearEyeDepth(depthMap, _ZBufferParams);
+
+                // 获取本模型当前片元观察空间下的Z值
+                float myDepth = -IN.positionVS.z;
+                float depthDifference = sceneDepth - myDepth;
+                depthDifference = 1 - depthDifference; // 反色
+                depthDifference = pow(depthDifference, _HightlightWidth);
+                half4 highlight = depthDifference * _HighlightColor;
+                highlight = saturate(highlight);
+
+                // 菲涅尔边缘光 ----------------------------------------
+                // V dot N
+                float3 N = normalize(IN.normalWS); // 法向量
+                float3 V = normalize(GetCameraPositionWS() - IN.positionWS.xyz);// 视线向量 = 摄像机位置 - 片元位置 （世界空间）
+                float fresnel = saturate(1 - dot(N,V));
+                fresnel = pow(fresnel, _RimLightWidth);
+                half4 rimlight = fresnel * _RimLightColor;
+
+                half4 color = highlight;
+                color += rimlight;
+
+
+                // 流光效果 ------------------------------------------
+                float2 flowUV = IN.uv + float2(0, _Time.x);
+                half4 flowBasemap = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, flowUV);
+                float2 distortUV = lerp(screenUV, flowBasemap.rr,_Distortion);
+                half4 distort = SAMPLE_TEXTURE2D(_CameraOpaqueTexture, sampler_CameraOpaqueTexture, distortUV);
+                float flowMask = frac(IN.uv.y * _FlowLayer + _Time.y) / _EdgeSoftness;
+                //return flowMask;
+                distort *= flowMask;
+                color += distort;
+
+                // 能量罩纹理 ----------------------------------------
+                color += flowBasemap * _BaseMapOpacity;
+
+                color.rgb = MixFog(color.rgb, IN.fogCoord);
+                return color;
+            }
+            ENDHLSL
+        }
+    }
+
+}
+
+```
+</details>
+```
