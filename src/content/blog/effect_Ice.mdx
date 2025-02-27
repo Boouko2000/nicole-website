@@ -1,0 +1,1393 @@
+---
+heroImage: /src/assets/images/cover_ice.png
+category: 实践记录
+description: Unity URP 管线下实现基于 Raymarching 的冰块材质实现
+pubDate: 2025-02-26T16:00:00.000Z
+tags:
+  - 渲染效果
+title: 冰块材质
+---
+
+import LocalVideo from '../../components/LocalVideo.astro'
+
+<LocalVideo src='/assets/Effects/Ice/video1.mp4' alt='video1' />
+
+### 光线分析
+
+#### 渲染方程
+
+**~~计算渲染点到观测者的光线辐射率 Radiance~~**
+
+计算能够到达观察者眼睛的Radiance
+
+<img
+	src='/assets/Effects/Ice/img2.png'
+	alt='img2'
+	style='width: 80%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+光线射向渲染点然后出射到观测者眼睛
+
+<img
+	src='/assets/Effects/Ice/img1.png'
+	alt='img1'
+	style='width: 80%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+**渲染方程的关键是计算渲染点到观察者的 Radiance**
+
+- 假设 _只有一个理想点光源_ ，且环境为一片漆黑
+
+<img
+	src='/assets/Effects/Ice/img3.png'
+	alt='img3'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+**BRDF 双向反射分布函数**
+
+<img
+	src='/assets/Effects/Ice/img4.png'
+	alt='img4'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+根据能量守恒法则，我们看到的 $$Lo(p,ωo)$$ ，_最大值是 $$Li(p,ωi)(N·ωi)$$_ ，这是镜面反射状态并且光线完全没有被吸收和折射的情况，因此BRDF的值会在[0,1]之间。根据不同的物质属性，光线到达表面会有不同情况的反射、折射、散射和吸收，反射出来的光线会有不同程度的损失，而BRDF通常就是我们通俗上讲的材质。
+
+<br></br>
+**~~多光源情况下计算 Radiance~~**
+
+<img
+	src='/assets/Effects/Ice/img5.png'
+	alt='img5'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<img
+	src='/assets/Effects/Ice/img6.png'
+	alt='img6'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~渲染方程完全体~~**
+
+<img
+	src='/assets/Effects/Ice/img7.png'
+	alt='img7'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+现实环境的光源由于集成了多光源、物体之间相互反弹的间接光等情况，所以整体光源可以认为是表面法线半球方向上有无限个连续的点光源。此时计算连续点光源的 Radiance 用到积分。
+
+- 从 p点反射后进入观测者眼睛的Radiance就是 _所有半球方向ωi的定积分_
+- 再 _加上物体自身的自发光辐射出的光线_
+
+<br></br>
+#### 冰块材质的光线分析
+
+**~~光线可逆性质与光线追踪~~**
+
+根据光线的可逆性质，我们可以认为 _光线是从观测者眼睛射出_ ，然后把能到达的所有方向上的光源做一个相加或积分操作，其实这思路正是光线追踪的基本思路。
+
+<br></br>
+**~~冰材质受光分析~~**
+
+冰块材质的光线（假设表面光滑）
+
+- _表面反射_
+- _表面折射_
+- _内部散射_ ： 冰块里面的杂质（气泡、裂缝、尘粒等），会把光线打散，散射到周围的环境中去，所以冰块中间是存在很多复杂的散射现象
+
+---
+
+**BSDF**
+
+冰块的光线模型分析，假设冰块中的杂质是均匀分布的
+
+<img
+	src='/assets/Effects/Ice/img8.png'
+	alt='img8'
+	style='width: 50%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- 假设光线从观测者射出， _入射光线ωi的能量会分散到反射方向（ωrefle）、折射方向（ωrefra）、散射方向（ωd）_ ，因此思路是我们独立去计算反射、折射和散射方向的能量，再把它们加起来就行。
+
+- 研究折射问题，就必须加上BTDF（双向透射分布函数），BRDF和BTDF加起来统称为BSDF
+
+<br></br>
+**~~冰材质光线模拟思路~~**
+
+**反射与折射**
+
+- 通过 Cube Map 进行反射方向与折射方向的采样
+
+---
+
+**散射**
+
+- 散射涉及到体积问题，用物体厚度的思路来模拟。薄的地方散射能量弱，厚的地方散射能量强。
+- 散射能量用环境光的平均颜色来模拟。
+
+<br></br>
+### Shader 基本框架 #### 基础 URP Unlit Shader
+
+Shader structure
+
+```csharp
+Shader "Unlit/Ice"
+{
+    Properties
+    {
+
+    }
+    SubShader
+    {
+        Tags { "RenderType"="Opaque" "RenderPipeline" = "UniversalPipeline" "Queue" = "Geometry"}
+
+        Pass
+        {
+            Name "Unlit"
+
+            HLSLPROGRAM
+            //This directive tells the shader compiler to exclude certain graphics APIs when compiling this shader. Specifically:
+            // gles: Excludes OpenGL ES 2.0 (commonly used on older mobile devices).
+            // gles3: Excludes OpenGL ES 3.0 (used on newer mobile devices).
+            // glcore: Excludes desktop OpenGL.
+            #pragma exclude_renderers gles gles3 glcore
+            #pragma target 4.5
+
+            #pragma vertex UnlitPassVertex
+            #pragma fragment UnlitPassFragment
+
+            #include "IceInput.hlsl"
+            #include "IceForwardPass.hlsl"
+
+            ENDHLSL
+        }
+    }
+}
+
+```
+
+Inputs
+
+```csharp
+#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/SurfaceInput.hlsl"
+
+// 定义 C Buffer
+// C Buffer用于将一些经常变化的全局变量（如材质属性）从CPU传递到GPU
+// **UnityPerMaterial**是该缓冲区的名字，表示与材质相关的参数通常存储在这里
+CBUFFER_START(UnityPerMaterial)
+
+CBUFFER_END
+```
+
+Pass
+
+```csharp
+// 定义定点属性的结构体，传入顶点着色器
+struct Attributes
+{
+    float4 positionOS : POSITION;
+};
+
+// 定义从顶点着色器传递到片元着色器的数据结构体
+struct Varyings
+{
+    float4 positionCS  : SV_POSITION;
+};
+
+// vertex shader
+Varyings UnlitPassVertex(Attributes input)
+{
+    Varyings output = (Varyings)0;
+
+    // 函数 GetVertexPositionInputs(input.positionOS.xyz) 将顶点从Object-Space转换到Clip-space
+    VertexPositionInputs vertexInput = GetVertexPositionInputs(input.positionOS.xyz);
+    output.positionCS = vertexInput.positionCS;
+    return output;
+}
+
+// fragment shader
+half4 UnlitPassFragment(Varyings input) : SV_Target
+{
+    return half4(1,1,1,1);
+}
+```
+
+<br></br>
+#### 细化 InputData
+
+<details>
+	<summary>细化代码</summary>
+
+    ```csharp
+    struct IceInputData
+    {
+    	// 当前相机的世界空间位置
+    	float3 cameraPosition;
+    	// 模型表面着色点的世界空间位置
+    	float3 positionWS;
+    	// 世界空间的视觉方向，模型着色点指向相机的方向
+    	float3 viewDirectionWS;
+    	// 切线空间的视觉方向，是viewDirectionWS的不同空间描述
+    	float3 viewDirectionTS;
+
+    	// ------------需要三个法线方向------------
+    	// 1. 世界空间的顶点法线方向：（顶点法线）用于计算物体厚度
+    	float3 vertexNormalWS;
+    	// 2. 世界空间的像素法线方向（包含法线贴图信息）：精度较高，用于计算反射和折射
+    	float3 pixelNormalWS;
+    	// 3. 切线空间的法线方向：（法线贴图上的信息），计算裂缝的时候需要采样SDF图，而这部分计算是在切线空间完成
+    	float3 normalTS;
+
+
+    	// 系统的运行时间
+    	float time;
+    };
+    ```
+
+    ```csharp
+    // 对有detail normal map这样有第二个法线贴图的情况进行法线混合
+
+half3 BlendAngleCorrectedNormals(half3 baseNormal, half3 additionalNormal)
+{
+baseNormal.b += 1.0;
+additionalNormal.rg _= -1.0;
+half d = dot(baseNormal, additionalNormal);
+half3 tempBase = baseNormal _ d;
+half3 tempAdd = additionalNormal \* baseNormal.b;
+return tempBase - tempAdd;
+}
+
+// 计算世界空间下的逐像素法线
+// 采样法线贴图的到切线空间下的逐像素法线并将其归一化
+// 对有detail normal的情况进行法线混合
+// 将切线空间下的法线转换到世界空间下
+void EffectNormal(float3x3 t2w, float2 uv, out half3 normalTS, out half3 normalWS)
+{
+normalTS = half3(0, 0, 1);
+
+    #ifdef _USEGLASSNORMAL
+
+    normalTS = UnpackNormal(tex2D(_GlassNormal, uv));
+    normalTS.rg *= _GlassNormalScale;
+    normalTS = normalize(normalTS);
+
+    #ifdef _USEDETAILNORMAL
+    half3 detailNormalTS = UnpackNormal(tex2D(_DetailNormal, uv * _GlassDetailUVScale));
+    normalTS = BlendAngleCorrectedNormals(normalTS, detailNormalTS);
+    normalTS = normalize(normalTS);
+    #endif // _USEDETAILNORMAL
+
+    #endif // _USEGLASSNORMAL
+
+    normalWS = TransformTangentToWorld(normalTS, t2w);
+
+}
+
+// Varyings input 变量为经过顶点着色器计算后输出的变量
+void InitializeIceData(Varyings input, out IceInputData inputData)
+{
+inputData = (IceInputData)0;
+
+    // 切线空间到世界空间的转换矩阵
+    // 由于每个顶点的切线坐标不一样，因此无法通过Unity统一传递过来，需要每个顶点去计算
+    float3x3 t2w = float3x3(input.tangentWS.xyz, input.bitangentWS.xyz, input.normalWS.xyz);
+
+    // 获取当前相机的世界空间位置
+    inputData.cameraPosition = GetCameraPositionWS();
+    // 获取模型表面着色点的世界空间位置
+    inputData.positionWS = input.positionWS;
+
+    // 获取世界空间的观测方向（归一化）
+    // 世界空间下的观测方向在顶点着色器已经计算出来并储存在了法线、切线和副切线的w分量上
+    inputData.viewDirectionWS = normalize(float3(input.normalWS.w, input.tangentWS.w, input.bitangentWS.w));
+
+    // 获取切线空间下的观测方向
+    inputData.viewDirectionTS = TransformWorldToTangent(inputData.viewDirectionWS, t2w);
+
+    // 获取世界空间下的法线方向（归一化）
+    inputData.vertexNormalWS = normalize(input.normalWS.xyz);
+
+    // 这个函数的目的是计算模型的逐像素法线，并将其转换为世界空间法线。
+    // 分为切线空间法线 (normalTS) 和世界空间法线 (normalWS)。
+    EffectNormal(t2w, input.uv0.zw, inputData.normalTS, inputData.pixelNormalWS);
+
+    // _Time是Unity传递过来的时间参数，x:t/20 y:t z:t*2 w:t*3
+    inputData.time = _Time.x;
+
+}
+```
+
+</details>
+
+<br></br>
+### 反射
+
+#### CubeMap
+
+**~~CubeMap 基础介绍~~**
+
+CubeMap是一张由6个面组成的纹理图，它将6个纹理组合成一张单一的纹理，因此CubeMap本质上是属于Texture2D，只是 _采样方式与Texture2D不同_ ，CubeMap和Texture3D是需要区分开来，虽然CubeMap和Texture3D都需要用三维向量来采样。
+
+<img
+	src='/assets/Effects/Ice/img9.png'
+	alt='img9'
+	style='width: 60%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+实际使用中，相当于把CubeMap折叠成一个立方体，画面朝向里面，摄像机摆在立方体的正中间，通过 `view direction` 来对CubeMap索引和采样。
+
+<img
+	src='/assets/Effects/Ice/img10.png'
+	alt='img10'
+	style='width: 60%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~CubeMap 采样方式~~**
+
+作为反射的采样，也就是我们要找出 _反射方向_ ，通过反射方向来做索引采样，就能获得反射的效果。
+
+<img
+	src='/assets/Effects/Ice/img11.png'
+	alt='img11'
+	style='width: 60%; height: auto; display:block; margin: 0 auto;'
+/>
+
+#### 反射方向的计算
+
+**~~反射方向分析~~**
+
+反射分析
+
+<img
+	src='/assets/Effects/Ice/img12.png'
+	alt='img12'
+	style='width: 80%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<img
+	src='/assets/Effects/Ice/img13.png'
+	alt='img13'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- 计算出 R 后，用归一化的 R 进行 CubeMap 索引采样
+
+<br></br>
+**~~代码实现~~**
+
+```csharp
+half4 EffectReflection(IceInputData inputData)
+{
+    // 入射方向（世界空间下的观测方向）
+    half3 inputDir = -inputData.viewDirectionWS;
+    // 世界空间下的反射方向 R =  2 * (dot(-L, N) * N) + L
+    half3 refDir = dot(-inputDir, inputData.vertexNormalWS) * inputData.vertexNormalWS;
+    refDir = 2 * refDir + inputDir;
+    // 采样CubeMap
+    half4 color = texCUBE(_ReflectionTexture, refDir);
+
+    return color;
+}
+```
+
+- 使用内置 `reflect()` 函数
+
+```csharp
+half4 EffectReflection(IceInputData inputData)
+{
+    half4 color = texCUBE(_ReflectionTexture, reflect(-inputData.viewDirectionWS, inputData.pixelNormalWS));
+
+    return color;
+}
+```
+
+<br></br>
+
+#### 反射 BRDF 的计算
+
+<img
+	src='/assets/Effects/Ice/img14.png'
+	alt='img14'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~菲涅尔公式~~**
+
+对于冰块的反射，我们认为是镜面反射，不存在Glossy反射，那么BRDF项我们单纯考虑光线在两种介质中传播时反射和折射的规律就可以了，而描述这个规律的公式就是菲涅尔公式。
+
+---
+
+反射光的方向性：- 镜面反射：光线严格按照入射角等于反射角的方向反射，反射高度集中。- Glossy反射：光线主要集中在反射角附近，但有一定的散射范围，反射图像较模糊。
+
+表面光滑度：- 镜面反射：发生在非常光滑的表面。- Glossy反射：发生在有一定粗糙度的表面。
+
+视觉效果：- 镜面反射：反射光线非常清晰，反射效果接近镜子。- Glossy反射：反射光线稍微散开，反射效果有光泽，但图像模糊。
+
+例子：- 镜面反射：镜子、抛光金属、光滑的冰块、清澈的水面。- Glossy反射：哑光车漆、抛光但略微粗糙的木材、轻度磨砂金属。
+
+---
+
+菲涅尔公式描述反射与透射
+
+- _菲涅尔公式描述了光在两种介质交界处的反射和折射行为_ ，即光从一种介质（例如空气）进入另一种介质（例如冰块）时，部分光会被反射，部分光会透射进入冰块内部。反射率和透射率由菲涅尔方程计算，具体取决于入射光的角度和两种介质的折射率。
+
+---
+
+BRDF 的简化处理
+
+- BRDF 是描述物体表面光线反射行为的一个广义模型。_对于冰块这种高度光滑的表面，光线反射表现为纯镜面反射_ ，因此 BRDF 可以简化为单纯考虑光在不同介质间传播时的反射和折射规律，即通过菲涅尔公式来计算。
+- 由于冰块表面没有显著的表面粗糙度或微观结构，不需要考虑复杂的光泽反射或散射模型，因此 BRDF 可以简化为由菲涅尔公式决定的镜面反射。
+
+---
+
+菲涅尔公式
+
+<img
+	src='/assets/Effects/Ice/img15.png'
+	alt='img15'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~代码实现~~**
+
+```csharp
+half4 EffectReflection(IceInputData inputData)
+{
+    // 采样cubeMap
+    half4 color = texCUBE(_ReflectionTexture, reflect(-inputData.viewDirectionWS, inputData.pixelNormalWS));
+
+    // 菲尼尔项Fresnel
+    // ((n1 - n2)/(n1 + n2))^2，n1是空气的折射率1.0，n2是冰的折射率1.333
+    half R0 = 0.02;
+    // cosθ，可以转换成出射方向与法线方向的点乘
+    half fresnel = dot(inputData.viewDirectionWS, inputData.pixelNormalWS);
+    fresnel = 1 - max(0, fresnel);
+    fresnel = pow(fresnel, 5);
+    fresnel = R0 + (1 - R0) * fresnel;
+
+    // _ReflectionColor 是用来模拟光线吸收
+    color.rgb *= fresnel * _ReflectionColor.rgb;
+    color.a = fresnel;
+    return color;
+}
+```
+
+`_ReflectionColor` 是一个材质属性，它表示反射光的颜色，可能是根据光的吸收情况进行调整的
+
+- 如果 `_ReflectionColor` 是深色（比如黑色），则模拟强烈的光线吸收，反射光的颜色会变得暗淡。
+- 如果 `_ReflectionColor` 是较亮的颜色，则表面吸收较少，更多的光被反射出来。
+
+<br></br>
+**~~与完整 BRDF 的区别~~**
+
+上述方法中使用了菲涅尔公式中的 _Schlick 近似_ 来计算 _反射率_ ，这是一种常见的简化处理，用于高效计算光线在材质表面上的反射。Schlick 近似能够快速逼近真实的菲涅尔反射率计算，特别是在实时渲染场景中非常有效。
+
+---
+
+**BRDF 完整模型**：在完整的 BRDF 模型（如 Cook-Torrance 模型）中，通常会同时考虑 _菲涅尔项_ 、_几何遮挡项_ 和 _微表面分布项_ ，这三部分共同描述光线在物体表面上的反射行为。
+
+- 菲涅尔项：描述反射率如何随角度变化。
+- 几何遮挡项（G）：描述表面微结构如何影响光线被遮挡或阻挡。
+- 微表面分布项（D）：描述表面微观结构的法线方向分布，影响高光的形状和大小。
+
+### 折射
+
+#### 折射方向的计算
+
+**~~折射方向分析~~**
+
+**目标**
+
+到折射方向，用折射方向去采样 CubeMap
+
+<img
+	src='/assets/Effects/Ice/img16.png'
+	alt='img16'
+	style='width: 60%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+**推导过程**
+
+<img
+	src='/assets/Effects/Ice/img17.png'
+	alt='img17'
+	style='width: 60%; height: auto; display:block; margin: 0 auto;'
+/>
+
+$$ ω $$ 是空气折射率与水 _折射率的比值_
+
+$$ cosθ*i $$ 可以写成 *入射方向 `L` 与 法线 `N` 的点乘\_ （由于L与N的夹角大于90度，因此点乘结果是负数，需要再乘以-1）
+
+<br></br>
+**~~代码实现~~**
+
+```csharp
+half4 EffectRefraction(IceInputData inputData)
+{
+    // n1/n2
+    // 空气与水折射率的比值0.75
+    float w = 0.75;
+
+    // cos入射角度：-N dot L
+    float cosi = dot(inputData.pixelNormalWS, inputData.viewDirectionWS);
+
+    // cos折射后的出射角度
+    float cost = 1.0 - w * w * (1.0 - cosi * cosi);
+    cost = sqrt(cost);
+    // 计算出折射方向
+    float3 refractDir = w * (-inputData.viewDirectionWS) + inputData.pixelNormalWS * (w * cosi - cost);
+
+    // 用折射出射方向采样CubeMap
+    half3 color = texCUBE(_ReflectionTexture, refractDir).rgb;
+
+    // 模拟颜色吸收，乘以一个折射颜色
+    color *= _RefractionColor.rgb;
+
+    return half4(color, 1.0);
+}
+```
+
+---
+
+HLSL内置refract函数
+
+```csharp
+half4 EffectRefraction(IceInputData inputData)
+{
+    // n1/n2
+    float w = 0.75;
+    float3 L = -inputData.viewDirectionWS;
+    float3 N = inputData.pixelNormalWS;
+
+    // 采样CubeMap
+    // refract() 函数所需参数：
+    // 1. 世界坐标下的观测方向
+    // 2. pixelNormal的方向
+    // 3. 两种介质的折射比
+    half3 color = texCUBE(_ReflectionTexture, refract(L, N, w)).rgb;
+
+    // 模拟颜色吸收，乘以一个折射颜色
+    color *= _RefractionColor.rgb;
+
+    return half4(color, 1.0);
+}
+```
+
+<br></br>
+**~~模拟光的色散现象~~**
+
+在现实中，光在不同介质的折射率会根据波长不同而有所区别。即不同颜色的光在不同介质中的折射率不一样。
+
+<img
+	src='/assets/Effects/Ice/img18.png'
+	alt='img18'
+	style='width: 60%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- 如当一束白光射入水中时，其中:
+  - 红光在水中的折射率 $$ nr = 1.3311 $$
+  - 绿光在水中的折射率 $$ ng = 1.3371$$
+  - 蓝光在水中的折射率 $$nb = 1.3428$$
+- 这些不一样的折射率就会产生光的色散现象
+- 波长越大，折射率越小（红光波长大，折射率小，所以偏移角度小）
+
+---
+
+**代码实现**
+
+之前所计算的 `n1 / n2` 中的 `n2` 是 _可见光比较靠中间的波长 589nm 的折射率。_
+
+如今要考虑到色散现象，就把 n2 替换成 RGB 三种光对应波长的折射率 wr wg wb
+
+```csharp
+half4 EffectRefraction(IceInputData inputData)
+{
+    // n1/nr
+    float wr = 0.7513;
+    // n1/ng
+    float wg = 0.7479;
+    // n1/nb
+    float wb = 0.7447;
+
+    float3 L = -inputData.viewDirectionWS;
+    float3 N = inputData.pixelNormalWS;
+
+    // 只考虑 RGB 三种光源的色散效果
+    half3 refractR = texCUBE(_ReflectionTexture, refract(L, N, wr)).rgb;
+    half3 refractG = texCUBE(_ReflectionTexture, refract(L, N, wg)).rgb;
+    half3 refractB = texCUBE(_ReflectionTexture, refract(L, N, wb)).rgb;
+    half3 color = half3(refractR.r, refractG.g, refractB.b);
+
+    // 模拟颜色吸收，乘以一个折射颜色
+    color *= _RefractionColor.rgb;
+
+    return half4(color, 1.0);
+}
+```
+
+<br></br>
+#### 透射函数 BTDF 的计算
+
+**~~菲涅尔项计算透射~~**
+
+**透射函数 BTDF 的计算**
+
+- 前面所计算的菲尼尔公式的结果就是 _光线的反射_ 所占总光能的比例，假设光线只有折射和反射，没有其他的损失（即），那么 BTDF 的结果就是 1 - 菲涅尔项
+- **反射率 R** ：菲涅尔公式计算的是反射率，即入射光中有多少比例的光能被反射回原来的介质。这个反射率与入射角、介质的折射率相关。
+- **折射率 T** ：透射（或折射）光的比例可以通过 _1 - 反射率_ 来得到。由于能量守恒，透射光和反射光的能量总和应该等于入射光的总能量。如果忽略光吸收等其他损耗，透射率 T 等于 1 − R
+- 反射率 + 透射率 = 1
+- $$ R+T=1 $$
+
+---
+
+**BRDF 和 BTDF 的区别**
+
+BRDF（双向反射分布函数）：描述光线从一个方向入射，并从另一个方向反射的分布，主要针对反射行为。
+
+BTDF（双向透射分布函数）：描述光线从一个方向入射， _并从物体表面另一侧透射出来的分布_，主要针对透射行为
+
+---
+
+**代码实现**
+
+```csharp
+half4 UnlitPassFragment(Varyings input) : SV_Target
+{
+    //初始化 inputData
+    IceInputData inputData;
+    InitializeIceData(input, inputData);
+    half4 finalColor = 1;
+
+    // 计算反射
+    half4 reflection = EffectReflection(inputData);
+
+    // 计算折射
+    // reflection.a 通道储存着反射函数中计算的fresnel项
+    finalColor.rgb = EffectRefraction(inputData).rgb * (1 - reflection.a);
+
+    return finalColor;
+}
+```
+
+### 散射
+
+#### 分析
+
+<img
+	src='/assets/Effects/Ice/img19.png'
+	alt='img19'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+**~~冰的裂缝~~**
+
+<img
+	src='/assets/Effects/Ice/img20.jpg'
+	alt='img20'
+	style='width: 30%; height: auto; display:block; margin: 0 auto;'
+/>
+
+冰面裂缝特征
+
+- 沿裂缝，_接近冰块表面_ 时 _颜色最深_（接近纯白色）
+- 沿着表面法线方向往里生长，颜色逐渐变浅慢慢消失
+- 这种现象已经脱离了物体表面，但是我们Shader的计算都是在表面进行，这就需要用一种手段来模拟效果
+
+<br></br>
+**~~冰的杂质~~**
+
+<img
+	src='/assets/Effects/Ice/img21.jpg'
+	alt='img21'
+	style='width: 30%; height: auto; display:block; margin: 0 auto;'
+/>
+
+冰内部杂质特征
+
+- 假如冰块完全由水分子组成，那么通常情况下是透明的。但实际上即使是超纯水，也会产生不透明的冰块，_这是因为水中溶解的气体，由于温度降低，挤压出来的气体无法逃逸，就会在冰块内部形成空腔。_
+- 假设环境光照均匀，杂质在冰块中也是均匀分布，那么杂质颜色乘以视觉归一化的物体厚度即可。
+
+#### 裂缝
+
+**~~SDF 有向距离场~~**
+
+> 📣 **有向距离场 Signed Distance Field (SDF)**
+>
+> SDF是一个场，场内的每一个点，_表达了距离最近物体的距离_
+>
+> 由于分物体内和物体外，因此距离值区分正负，因此命名为有向距离场。
+
+---
+
+**2D SDF**
+
+<img
+	src='/assets/Effects/Ice/img22.png'
+	alt='img22'
+	style='width: 80%; height: auto; display:block; margin: 0 auto;'
+/>
+
+2D平面内的每一个点记录一个浮点值，刚好接触到物体的地方是0，物体外部是记录正数的距离量，物体内部是记录负数的距离量
+
+SDF图通常只记录[-1,1]区间的距离，归一化之后是[0,1]的区间取值，- _0.5的数值就是刚好接触物体的地方_ - [0.5,1]是物体内部 - [0,0.5]是物体外部。
+
+<br></br>
+**~~SDF Raymarching 算法~~**
+
+**基本概念**
+
+- **SDF（有符号距离函数）** ： SDF 是一个函数，_输入点 $$ p(x,y,z)$$ 表示空间中的某个位置，输出一个数值，表示该点到最近物体表面的最小距离。_
+  - 这个值是有符号的，通常约定 _正数表示点在物体外部，负数表示点在物体内部，而零表示点在物体表面上。_
+- **Raymarching（光线行进）**： 类似于光线投射（raycasting），但 raymarching 并非一步命中，而是沿着光线以一定步长进行前进。光线每次前进的步长由 SDF 函数的值来控制，这样光线每次都能够跳过空旷区域，加快收敛速度。
+
+---
+
+**算法步骤**
+
+- **初始化光线：** 从相机或观察者的起点，向某个方向发射一条光线。
+- **行进过程：**
+  - 在每个位置 `p(x,y,z)` ，通过 SDF 计算点到物体表面的距离 `d` 。
+  - _如果距离 `d` 足够小（即小于某个阈值），则认为光线与物体相交，命中点确定。_
+  - 如果距离很大，光线就以该距离作为步长向前行进。
+  - 这个过程重复进行，直到找到相交点或者光线离开视野范围（或超出最大步数限制，判断为未命中）。
+- **渲染：** 一旦光线命中物体表面，继续执行阴影、光照、反射等计算，以生成最终的像素颜色。
+
+---
+
+**SDF Raymarching 解释**
+
+<img
+	src='/assets/Effects/Ice/img23.png'
+	alt='img23'
+	style='width: 90%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- 从摄像机出发向场景内发射一条射线，射线采用步进方式
+- SDF 记录了场景中每一个点到所有物体的最近距离
+- 以当前点为圆心，_当前点到场景中最近物体表面的距离为半径。_ 每次射线的步进距离为该半径距离，即函数 y = SDF（p）的值
+- 如 y > 0, 则表示步进后点 p 仍在物体表面外，并未击中物体，可以安全步进
+- _如果当点 p 到物体的距离为 y < 0, 则表示点 p 在物体内部，代表射线击中物体表面，光线停止步进_
+
+---
+
+**伪代码**
+
+```csharp
+float Raymarching(float3 rayOri, float3 rayDir, float maxDepth, int maxIteration)
+{
+    // 沿着射线方向移动的距离
+    // t: 移动距离
+    float t = 0;
+
+    // 在有效步进数内展开循环
+    for(int i = 0; i < maxIteration; i++)
+    {
+        // 当超过最大步进距离则退出
+        if (t > maxDepth) break;
+
+        // 计算当前 p 点的位置：原点 + 射线方向 * 移动距离
+        float3 p = rayOri + rayDir * t;
+
+        // 获取当前 p 点的 SDF 值
+        float d = SDF(p);
+
+        // 当 SDF 值少于等于0说明射线已经击中物体，退出循环
+        if (d <= 0) break;
+
+        // 更新移动距离
+        t += d;
+    }
+    // 返回移动距离
+    return t;
+}
+```
+
+<br></br>
+**~~裂缝的具体实现方法~~**
+
+**获得记录物体表面裂缝的 SDF 图**
+
+<img
+	src='/assets/Effects/Ice/img24.png'
+	alt='img24'
+	style='width: 90%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- 所有计算是在切线空间下完成，所以需要获取 _切线空间下的 $$V$$ 方向_
+- $$Vxy$$ 是 $$V$$ 方向在物体表面的投影
+- $$-kVxy$$ 是 $$Vxy$$ 的相反方向
+- $$-kV$$ 是 $$V$$ 的反向延长方向，假设 $$-kV$$ 能与裂缝相交，那么 $$-kVxy$$ 就是在物体表面P点到裂缝位置的最短距离，现在我们要计算这个距离值
+
+---
+
+**代码实现**
+
+- 对于物体表面的每一个像素点 $$p$$ ，计算其距离最近裂缝的最近距离
+- 从点 $$p$$ 出发，射线方向为观测方向 $$V$$
+- 当步进到某个点 $$p’$$ ,使得 SDF 采样值小于 0 时，即该点 $$p'$$ 处于裂缝内部
+
+```csharp
+half SDF_Raymarching(sampler2D tex, float2 baseUV, float2 offsetUV, int numSteps, half stepSize, half edgeWidth)
+{
+    // 起始点
+    float2 p = baseUV;
+    // 归一化后获得方向
+    float2 dir = normalize(offsetUV);
+    // 起始点到终点的距离
+    float value = 0.0;
+
+    for (int i = 0; i < numSteps && i < 10; i++)
+    {
+        // 通过采样 SDF 图求得当前 p 点与最近裂缝距离
+        // 循环内只能对纹理的单一 MipMap 等级采样
+        float distance = 1 - tex2Dlod(tex, float4(p, 0,0)).r;
+        // 加入 edgeWidth 微调宽度效果
+        distance -= edgeWidth;
+
+        // 当距离少于0，说明已经击中物体，退出循环
+        if (distance < 0.0)
+            break;
+
+        // 不为0的时候，记录当前 t ，更新 p 点位置
+        float t = distance * stepSize;
+        p += dir * t;
+        value += t;
+    }
+
+    return value;
+}
+```
+
+相比于之前的伪代码，这段计算全部在物体表面完成，是属于在 _切线空间_ 的二维计算
+
+SDF值通过物体表面的位置（UV坐标） _采样SDF图_ 获得。
+
+---
+
+使用 stepSize 的原因 - _避免过快的光线前进:_ 直接使用 `distance` 作为步进距离可能会导致光线在某些情况下前进得太快，尤其是在距离值很大的情况下。这种情况下，光线可能会跳过物体，导致漏掉细节或无法正确检测到物体的表面。- _稳定性:_ 乘以 `stepSize` 可以控制每一步的移动量，使光线行进更加稳定。在某些情况下， `distance` 可能会有噪声或不规则波动，直接使用可能会导致光线行进的不稳定。通过引入一个固定的步长，可以使光线行进过程更加可控。- _精度调节:_ `stepSize` 提供了一种方便的方式来调节光线行进的精度和性能。通过调整 `stepSize` ，开发者可以快速地在渲染速度和细节之间进行权衡。例如，如果需要更精细的渲染效果，可以减小 `stepSize` ，使得光线在每次迭代中移动更少，从而采样得更精确。- _避免陷入无穷循环:_ 如果 `distance` 的值过大，光线可能会在某些情况下无限制地向前移动，导致迭代次数过多，甚至进入无穷循环。使用 `stepSize` 可以帮助限制每一步的移动量，从而控制总的迭代次数。- _提高可调性:_ `stepSize` 可以方便地作为一个参数进行调整，使得光线行进的行为更加灵活。在不同场景下，可能需要不同的步长来达到最佳的渲染效果。
+
+---
+
+**代码实现**
+
+```csharp
+half EffectCracks(Varyings input, IceInputData inputData)
+{
+    // baseUV 在切线方向上对原始UV做一些法线的扰动，让裂缝看起来更加自然
+    float2 baseUV = input.uv + inputData.normalTS.xy * _CracksDistortion;
+
+    // -Vxy V在物体表面的投影方向的反方向，乘以_CracksHeight做高度微调
+    // inputData.viewDirectionTS.xy 表示切线空间下，视角方向在物体表面的投影
+    float2 offsetUV = -inputData.viewDirectionTS.xy * _CracksHeight;
+    int numSteps = _CracksDepthIterations; //步进次数限制
+    half stepSize = _CracksDepthStepSize; //每次步进的长度
+    half edgeWidth = _CracksWidth;// 裂缝边缘宽度
+
+    // SDF Raymarching 计算
+    half depthCracks = SDF_Raymarching(_CracksSDFTexture, baseUV, offsetUV, numSteps, stepSize, edgeWidth);
+
+    // 视角方向投影长度与裂缝距离的差
+    // viewDirectionTS 在物体表面的投影长度 减去 SDF_Raymarching 的距离
+    depthCracks = length(offsetUV) - depthCracks;
+
+    // 裂缝深度和缩放限制
+    depthCracks *= _CracksDepthScale;
+    depthCracks = saturate(depthCracks);
+
+    return depthCracks;
+}
+```
+
+`CracksHeight` 主要控制的是视角方向在表面上的投影深度，直接影响裂缝在表面上的视觉高度，影响裂缝在表面的形态和大小。
+
+`CracksDepthScale` 主要是一个全局缩放因子，用于调节裂缝深度效果的强度，影响的是裂缝深度的视觉强度。
+
+#### 杂质
+
+**~~基本色~~**
+
+模拟体积感，将物体分为表面层和次表面层，只要控制不同的视觉偏移去多次采样，就能模拟多层次表面层，模拟出体积感
+
+- 表面层：直接 _纹理坐标采样_
+- 次表面层：通过 _纹理坐标_ 加 _视觉偏移值_ 模拟出纵深感
+
+---
+
+<img
+	src='/assets/Effects/Ice/img25.png'
+	alt='img25'
+	style='width: 50%; height: auto; display:block; margin: 0 auto;'
+/>
+
+示意图分析
+
+- `Vxy` 是 `V` 方向在物体表面的投影，看图得知我们需要反方向 `-Vxy` 偏移，
+- `k` 是偏移系数，取值范围 `k > 0`
+- _`k = 0` 的时候没有偏移，就是表面层的效果_
+- 当 `k` 取值越大的时候，次表层的深度就越深
+
+---
+
+视觉偏移的模拟
+
+- 体积感的关键是通过控制视觉偏移来让观察者感知到物体不仅仅是一个平面，而是具有深度
+- k控制了偏移的程度，k越大，意味着次表面层看起来越深，偏移越明显；当 k=0时，没有偏移， _表面层与次表面层重合，物体看起来就是一个简单的表面。_
+- 偏移方向为 −kVxy是为了 _确保次表面层向观察者的反方向偏移_ ，使得在视觉上表现为有深度的内部结构。这种反向偏移能够让每一层次的表面显得更远，从而构成一个逐渐深入的效果，达到体积感的模拟。
+
+---
+
+代码实现
+
+```csharp
+half3 EffectDust(Varyings input, IceInputData inputData)
+{
+    // 基本UV加入时间参数模拟流动效果
+    // _DustTextureUVAnim.xy: 控制UV坐标在时间上的动画速度，控制杂质的流动速度
+    float2 dustUV = input.uv + inputData.time * _DustTextureUVAnim.xy;
+
+    // 视觉偏移增加 _DustDepthShift 参数作为 k 系数
+    // viewDirectionTS.xy : 视觉方向V在物体表面的投影Vxy
+    // viewUV相当于 -kVxy : 模拟了次表层相对于视角的视觉位移。
+    float2 viewUV = -inputData.viewDirectionTS.xy * _DustDepthShift;
+
+    // Layer1 次表层
+    // _DustLayerBetween 作为两个 Layer 之间的偏差参数控制
+    // viewUV只是一个向量，dustUV + viewUV表示次表面层采样点
+    float2 uv1 = dustUV + viewUV * _DustLayerBetween;
+    float3 color1 = tex2D(_DustTexture, uv1).rgb;
+
+    // Layer2 表层
+    float2 uv2 = dustUV + viewUV;
+    float3 color2 = tex2D(_DustTexture, uv2).rgb;
+
+    // FinalColor
+    // 增强颜色的明亮度和饱和度
+    float3 finalColor = color1 * color1 + color2 * color2;
+    finalColor *= _DustColor.rgb;
+
+    return finalColor;
+}
+```
+
+---
+
+表层uv不直接用dustUV - 表层的灰尘并不是完全贴合在物体的表面上，而是与物体的实际表面有一定的偏移量。这种偏移量可以用 viewUV 来模拟，它让表层的灰尘看起来像是浮在物体表面之上，而不是严格地贴在物体表面上
+
+`_DustDepthShift` 和 `_DustLayerBetween` 是两个不同维度的控制项：- `_DustDepthShift` 负责整体的深度感 （包括 冰面与表层杂志的深度差 以及 表层杂质与次表层杂质的深度差）- `_DustLayerBetween` 负责层间的视觉差异 （指表层杂质与次表层杂质之间的深度差）
+
+<br></br>
+**~~厚度~~**
+
+厚度分析
+
+<img
+	src='/assets/Effects/Ice/img26.png'
+	alt='img26'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- 计算物体厚度的思路是通过射线求物体交点。
+- 假设A是射线进入物体的点，B是射线射出物体的点，那么AB的距离就是物体的厚度。
+- 显示几何体很计算交点，使用经验模型估算厚度
+
+---
+
+估算厚度的经验模型
+
+- 计算厚度的思路仍然是通过射线与物体相交
+- 以 _球体_ 来模拟物体，求射线与该球体相交的方式来模拟物体厚度
+
+---
+
+<img
+	src='/assets/Effects/Ice/img27.png'
+	alt='img27'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- 假设视线射向物体表面一点P，在P点沿 _法线相反方向_ 距离R的一点作为球心，作一个球体，球体半径为 R
+- 球体、物体表面、射线三点交于 P
+- _射线经过球体的距离_ 为物体在 P 点处的厚度
+
+<br></br>
+**~~射线与球体相交~~**
+
+**代数法**
+
+<img
+	src='/assets/Effects/Ice/img28.png'
+	alt='img28'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+$$ b = d \cdot (o-c) $$
+
+$$ c = (o-c) \cdot (o-c) - r^2 $$
+
+$$ t = -b +- sqrt(b^2 - c) $$
+
+---
+
+**几何法**
+
+<img
+	src='/assets/Effects/Ice/img29.png'
+	alt='img29'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+<br></br>
+<img
+	src='/assets/Effects/Ice/img30.png'
+	alt='img30'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+**代码**
+
+```csharp
+// t = -b ± sqrt(b^2 - c)
+void IntersectionShere(float3 rayOrigin, float3 rayDirection, float3 position, float radius,
+                        out float frontDist, out float backDist, out float thickness)
+{
+    float3 oc = rayOrigin - position;
+    float b = dot(oc, rayDirection);
+    float c = dot(oc, oc) - radius * radius;
+    float h = b * b - c;
+    h = sqrt(h);
+
+    frontDist = -b - h;
+    backDist = -b + h;
+
+    // thickness = backDist - frontDist = -b + h - (-b - h) = 2h
+    thickness = h * 2.0;
+}
+```
+
+<br></br>
+**~~计算厚度代码~~**
+
+通过一个 _半径系数_ 和 _物体缩放_ 能控制整体的厚度
+
+- 设定一个 _归一化的方向向量_ ，把它从物体空间转换成 _世界空间_ ，再求这个方向向量的长度，这样就得出物体的缩放参数
+- 当物体缩小时厚度变小，物体放大时厚度变大，这样就能非常方便地控制物体厚度数值
+- 也就是说 _通过这个向量的长度变化来映射物体的缩放_
+
+---
+
+计算两点之间距离
+
+```csharp
+// 从球体相交衍生出来的方法
+void IntersectionMesh(float3 rayOrigin, float3 rayDirection, float radius, IceInputData inputData, out float thickness)
+{
+    // Shading Point 沿法线反方向以半径 radius 长度偏移，得出球心
+    float3 offsetPosWS = inputData.positionWS - inputData.vertexNormalWS * radius;
+    float3 oc = rayOrigin - offsetPosWS;
+    float b = dot(rayDirection, oc);
+    float c = dot(oc, oc) - radius * radius;
+    float h = b * b - c;
+    h = sqrt(h);
+
+    thickness = h * 2;
+}
+```
+
+---
+
+获取物体缩放值
+
+```csharp
+float3 ObjectScale()
+{
+    float3 output = 0;
+
+    // 将归一化向量从OS转换到WS， false表示不不normalize
+    float3 worldDir = TransformObjectToWorldDir(float3(1,0,0), false);
+    output.x = length(worldDir);
+    worldDir = TransformObjectToWorldDir(float3(0,1,0), false);
+    output.y = length(worldDir);
+    worldDir = TransformObjectToWorldDir(float3(0,0,1), false);
+    output.z = length(worldDir);
+    return output;
+}
+```
+
+---
+
+最终求物体厚度的函数
+
+```csharp
+float ShapeVolume(IceInputData inputData)
+{
+    // 观测点位置
+    float3 rayOrigin = inputData.cameraPosition;
+    // 视线方向
+    float3 rayDirection = -inputData.viewDirectionWS;
+
+    // 当前实际球体半径 = 半径系数 * 物体缩放
+    float radius = _ShapeSphereRadius * ObjectScale().x;
+
+    // 求该半径下的球体厚度
+    float thickness = 0;
+    IntersectionMesh(rayOrigin, rayDirection, radius, inputData, thickness);
+
+    return thickness;
+}
+```
+
+<br></br>
+**~~雾~~**
+
+厚度不能直接渲染出来，必须通过转换成光的能量才能被渲染。
+
+- 雾越厚，光线散射就越厉害，雾与杂质的基本色相乘，那么就是最终杂质的效果了
+- 这里的雾指的是，冰块内部的模糊效果
+
+---
+
+**代码**
+雾效公式来自 D3D 的 Fog 模型 - 通过 _厚度和密度_ 计算雾
+
+```csharp
+float ExponentialDensity(float depth, float density, bool useExp2)
+{
+    // D3DFOG_EXP   f = 1/ e ^ (depth * density)
+    // D3DFOG_EXP2  f = 1/ e ^ ((depth * density)^2)
+    float value = depth * density;
+    value = useExp2 ? value * value : value;
+
+    value = pow(2.718, value);
+    value = 1 / value;
+
+    // 深度小于0则跳过
+    if (depth <= 0) value = 1;
+
+    return value;
+}
+```
+
+<br></br>
+**~~最终杂质效果~~**
+
+```csharp
+// Thickness
+float thickness = ShapeVolume(inputData);
+thickness = max(0, thickness);
+
+// Fog
+half fog = ExponentialDensity(thickness + _FogBase, _FogDensity, _UseFogExp2);
+fog = 1 - saturate(fog);
+
+// Dust Color
+half4 dustColor = 1;
+dustColor.rgb = EffectDust(input, inputData) + _FogColor.rgb;
+dustColor.rgb *= fog;
+dustColor.a = fog;
+```
+
+<br></br>
+#### 散射最终结果 **~~AlphaBlending~~**
+
+混合两种颜色
+
+```csharp
+// Premultiply Mode
+half4 AlphaBlending(half4 srcColor, half4 dstColor)
+{
+    half4 finalColor;
+    half oneMinutesAlpha = 1 - srcColor.a;
+    finalColor = srcColor + oneMinutesAlpha * dstColor;
+    return finalColor;
+}
+```
+
+<br></br>
+**~~混合裂缝与杂质颜色~~**
+
+```csharp
+half4 DiffuseEffect(Varyings input, IceInputData inputData)
+{
+    // Thickness
+    float thickness = ShapeVolume(inputData);
+    thickness = max(0, thickness);
+
+    // Fog
+    half fog = ExponentialDensity(thickness + _FogBase, _FogDensity, _UseFogExp2);
+    fog = 1 - saturate(fog);
+
+    // Dust Color
+    half4 dustColor = 1;
+    dustColor.rgb = EffectDust(input, inputData) + _FogColor.rgb;
+    dustColor.rgb *= fog;
+    dustColor.a = fog;
+
+    // Cracks Color
+    float depthCracks = EffectCracks(input, inputData);
+    half4 cracksColor = _CracksColor;
+    cracksColor.a *= depthCracks;
+    cracksColor.rgb *= cracksColor.a;
+
+    // Blend Cracks and Dust
+    half4 cracksDustColor = AlphaBlending(cracksColor, dustColor);
+
+    return cracksDustColor;
+}
+```
+
+效果：
+
+<img
+	src='/assets/Effects/Ice/img31.png'
+	alt='img31'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~散射颜色~~** 裂缝与杂质颜色再加一层表面的颜色细节，就完成了整个散射合成部分
+
+---
+
+Glass
+
+```csharp
+half4 EffectGlass(Varyings input)
+{
+    half glassAlpha = tex2D(_GlassTexture, input.uv0.xy).r * _GlassColor.a;
+    half4 glassColor = half4(_GlassColor.rgb * glassAlpha, glassAlpha);
+
+    return glassColor;
+}
+```
+
+---
+
+Diffuse
+
+```csharp
+half4 DiffuseEffect(Varyings input, IceInputData inputData)
+{
+    // Thickness
+    float thickness = ShapeVolume(inputData);
+    thickness = max(0, thickness);
+
+    // Fog
+    half fog = ExponentialDensity(thickness + _FogBase, _FogDensity, _UseFogExp2);
+    fog = 1 - saturate(fog);
+
+    // Dust Color
+    half4 dustColor = 1;
+    dustColor.rgb = EffectDust(input, inputData) + _FogColor.rgb;
+    dustColor.rgb *= fog;
+    dustColor.a = fog;
+
+    // Cracks Color
+    float depthCracks = EffectCracks(input, inputData);
+    half4 cracksColor = _CracksColor;
+    cracksColor.a *= depthCracks;
+    cracksColor.rgb *= cracksColor.a;
+
+    // Blend Cracks and Dust
+    half4 cracksDustColor = AlphaBlending(cracksColor, dustColor);
+
+    // Glass
+    half4 glassColor = EffectGlass(input);
+
+    // Diffuse
+    half4 diffuse = AlphaBlending(glassColor, cracksDustColor);
+
+    return diffuse;
+}
+```
+
+<img
+	src='/assets/Effects/Ice/img32.png'
+	alt='img32'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+### 合成
+
+#### 散射、反射、折射三色混合
+
+**~~混合逻辑~~**
+
+**反射与折射**
+
+- 由于BRDF和BTDF分别考虑了反射和折射方向上的光线分布，它们已经将入射光线在表面发生的反射和折射的物理行为考虑在内。当你在场景中使用它们时，实际上已经隐含了 _能量守恒_ 的要求
+- BRDF 和 BTDF 分别代表了反射和折射光的比例
+
+---
+
+**散射**
+
+- 散射与反射、折射不同，它通常是通过模拟环境光的方式来处理，类似于光线在多次碰撞后沿随机方向传播。由于它不基于BRDF/BTDF的精确光线分布模型， _只是简单模拟环境光的分布_ ，因此直接和BRDF/BTDF相加并不合适。
+
+---
+
+**三者混合**
+
+- 从 _能量守恒_ 的角度来看，光线总能量的分布应该在 _反射、折射和散射_ 三部分中合理分配
+- 通过 AlphaBlending 的混合方式使得三者遵循 _能量守恒_ 定律
+
+---
+
+**入射光能 = 反射光能 +（ 散射光能 + 折射光能）**
+
+$$ 散射和折射的能量总和 = \alpha * 散射能量 + （1-\alpha）*折射能量 $$
+
+**~~代码~~**
+
+最终合成
+
+```csharp
+// 最终合成
+void CombinedEffects(Varyings input, IceInputData inputData, out half3 color)
+{
+    // Diffuse 漫反射与散射
+    half4 diffuse = DiffuseEffect(input, inputData);
+
+    // Reflection 反射
+    half4 reflection = EffectReflection(inputData);
+
+    // Refraction 折射 = 折射能量 * (1-a) 确保能量守恒
+    // reflection.a 存储的是fresnel, 已考虑BRDF
+    // refelection.rgb 也是已经和a相乘的结果
+    half4 refraction = EffectRefraction(inputData) * (1-reflection.a);
+
+    // FinalColor
+    color = AlphaBlending(diffuse, refraction).rgb;
+    color += reflection.rgb;
+}
+```
+
+<br></br>
+### 相关资源 实时渲染第四版- 射线/球体相交 - https://zhuanlan.zhihu.com/p/405042067
+
+光线跟踪的几种常见求交运算\_射线追踪算法-CSDN博客
+
+- https://blog.csdn.net/qq_39300235/article/details/105232626
+
+URP冰Shader
+
+- https://learn.u3d.cn/tutorial/urp-ice-shader
