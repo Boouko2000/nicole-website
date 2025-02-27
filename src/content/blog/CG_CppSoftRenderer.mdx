@@ -1,0 +1,1509 @@
+---
+heroImage: /src/assets/images/cover_cppRenderer.png
+category: 图形学与引擎学习
+description: 通过纯C++实现的简易软光栅渲染器，实现部分OpenGL相关API底层功能
+pubDate: 2022-07-01T16:00:00.000Z
+tags:
+  - 图形学
+title: C++软光栅渲染器
+---
+
+import LocalVideo from '../../components/LocalVideo.astro'
+
+<LocalVideo src='/assets/CG/CppSoftRenderer/video1.mp4' alt='video1' />
+
+### 环境准备与直线绘制
+
+#### CMake
+
+**~~CMake介绍~~**
+
+**CMake 工具可以完成编译与链接的配置工作，让程序员可以跨平台编译链接程序**
+
+- CMakeLists.txt
+  - 整个 CMake 工程的描述文件
+  - 将与该 cmake 文件同目录下的 main.cpp 文件编译成 exe 文件
+
+```cmake
+  # CMake 最低版本要求
+  cmake_minimum_required(VERSION 3.0)
+
+  # 工程名
+  project(Graphic)
+
+  # 本工程支持的C++版本
+  set(CMAKE_CXX_STANDARD 17)
+
+  # 本工程主程序文件及输出程序名称
+  add_executable(SoftRenderer "main.cpp")
+```
+
+---
+
+**工程文件说明**
+
+Visual Studio 打开 CMake 工程
+
+- 文件/打开/CMake/CMakeLists.txt
+- _.vs文件夹_ 是visual studio建立的工程文件夹
+- _out文件夹_ 是整个工程编译链接的结果输出文件夹
+- softRenderer.exe 文件放在 _out/build/x64-debug_ 目录下
+
+---
+
+**多CPP文件编译**
+
+- 需求是当我们在工程里加入了新的cpp文件，主函数需要调用其中函数的时候，需要将其纳入编译与链接
+
+```cmake
+# CMake 最低版本要求
+cmake_minimum_required(VERSION 3.0)
+
+# 工程名
+project(Graphic)
+
+# 本工程支持的C++版本
+set(CMAKE_CXX_STANDARD 17)
+
+# 搜索所有的cpp，加入SRCS变量中
+aux_source_directory(. SRCS)
+
+# 本工程主程序文件及输出程序名称
+add_executable(SoftRenderer ${SRCS})
+```
+
+---
+
+**多文件夹编译**
+
+- 需求是当代码分布在不同的文件夹下的时候，需要将其他文件夹下的cpp打包为lib库，从而纳入链接范畴
+
+<img
+	src='/assets/CG/CppSoftRenderer/img1.png'
+	alt='img1'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- 需要在新的文件夹下创建CMakeLists.txt，每个CMakeLists.txt文件只管理其文件夹下的 cpp
+
+```cmake
+file(GLOB_RECURSE　FUNCS  ./ *.cpp)
+add_library(funcs ${FUNCS})
+```
+
+---
+
+**资源文件夹拷贝**
+
+```cmake
+file(GLOB　ASSETS"./assets" "thirdParty/assimp-vc143-mtd.dll")
+file(COPY${ASSETS} DESTINATION ${CMAKE_BINARY_DIR})
+```
+
+<br></br>
+#### Windows API
+
+**~~Windows API 介绍~~**
+
+**Windows API 是 Windows 应用程序接口**
+
+- _基础服务_ ：文件系统、外设调用、进程、线程及注册表访问等
+- _图形设备接口（GDI）_ ：输出图形到显示器、打印等设备
+- _网络服务_ ：多种网络功能接口等
+
+---
+
+**句柄 Handle**
+
+- Windows API 中的大多数接口，都是使用句柄（Handle）来进行资源操作
+- 句柄是一个用来 _标识对象或者项目的标识符_ ，可以用来描述窗体、文件等
+- 通常可以是一个 _整数_ 或者是一个 _指针_ 类型
+- 句柄所指代的资源通常 _不能直接访_
+- _句柄通常会作为 API 的参数_ ，通过 API 函数来改变句柄指代资源的状态
+
+<img
+	src='/assets/CG/CppSoftRenderer/img2.png'
+	alt='img2'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+**Windows 入口函数**
+
+因为要创建 Windows 窗体程序，所以需要调用 Windows API 并以wWinMain作为程序的入口点
+
+Windows 窗口程序需要满足以下特点：
+
+- 使用 _wWinMain_ 作为程序的入口点，而不是main函数
+- 使用 _#pragma comment_ 的linker选项来选择入口点，并且决定是否启用 console
+- 选项：
+
+```cpp
+  entry(mainCRTStartup/wWinMainCRTStartup)subsystem:console/windows
+```
+
+**~~Windows API 窗体构建~~**
+
+**windows 窗口类型创建**
+
+- Windows 下创建窗体，首先应该创建一个WNDCLASSEXW结构体，即窗体的类型描述模板
+- 即想要创建一个怎样的窗口，这个窗口有什么特点
+
+<img
+	src='/assets/CG/CppSoftRenderer/img3.png'
+	alt='img3'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+**创建窗口实例**
+
+最终得到的句柄 _hwnd_
+
+<img
+	src='/assets/CG/CppSoftRenderer/img4.png'
+	alt='img4'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+**实现窗体事件的回调函数**
+
+- Wndproc是窗体类的成员
+- 当该wndproc回调函数所归属的窗体发生了事件，该回调函数可以收到信息并做出响应
+
+<img
+	src='/assets/CG/CppSoftRenderer/img5.png'
+	alt='img5'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+**主程序串联**
+
+```cpp
+// 不停循环
+while(true)
+{
+  MSG msg;
+
+  // 尝试捕获消息
+  if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+  {
+    // 构建消息体
+    TranslateMessage(&msg);
+    // 分发消息
+    DisplatchMessage(&msg);
+  }
+}
+```
+
+**~~窗体构建与代码架构~~**
+
+**wWinMain()中**
+
+- initApplication() 创建窗体类
+- 每次循环中调用peekMessage()
+- peekMessage() >handleMessage() > 决定mAlive状态
+
+---
+
+**文件结构**
+
+SoftRenderer
+
+- application
+  - application.cpp
+  - application.h
+  - CMakeLists.txt
+- global
+  - base.h
+- CMakeLists.txt
+- main.cpp
+- out
+- thirdParty
+- assets
+
+---
+
+<details>
+  <summary>**章节代码**</summary>
+  ```cpp
+    cmake版本要求
+    cmake_minimum_required(VERSION 3.12)
+    工程名字
+    project(Graphic)
+    C++版本要求
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+    添加子目录
+    add_subdirectory(application)
+    添加可执行文件
+    add_executable(softRenderer "main.cpp")
+    链接库
+    target_link_libraries(softRenderer PRIVATE application)
+    添加包含路径（如果有其他子目录）
+    target_include_directories(softRenderer PRIVATE ${CMAKE_SOURCE_DIR}/application)
+    #include <Windows.h>
+    #include <iostream>
+    #include "application/application.h"
+    // 通过linker来选择入口是main还是wWinMain，并决定是否启用console
+    #pragma comment(linker, "/subsystem:console /entry:wWinMainCRTStartup")
+    /*
+    主循环流程再wWinMain函数中
+    窗体构建、消息处理以及其他方面的细节都封装在了application类中
+    */
+    int APIENTRY wWinMain(
+        
+    In
+    HINSTANCE hInstance,
+        
+    In_opt
+    HINSTANCE hPrevInstance,
+        
+    In
+    LPWSTR lpCmdLine,
+        
+    In
+    int nCmdShow) {
+        if (!app->initApplication(hInstance, 800, 600)) {
+            return -1;
+        }
+        // 主循环流程
+        bool alive = true;
+        while (alive) {
+            alive = app->peekMessage();
+        }
+        return 0;
+    }
+  ```
+
+```cmake
+  查找所有源文件
+  file(GLOB_RECURSE APPLICATIONS "*.cpp")
+  创建静态库
+  add_library(application ${APPLICATIONS})
+  添加头文件路径
+  target_include_directories(application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+```
+
+```cmake
+  #pragma once
+  #include "../global/base.h"
+  #include <Windows.h>
+  // 获取 Application 类的单例
+  #define app Application::getInstance()
+  class Application {
+  public:
+      static Application* getInstance(); // 静态成员函数：创建单例
+      Application();                     // 构造函数
+      ~Application();                    // 析构函数
+      // 成员函数：注册窗体类，创建一个窗体并显示
+      bool initApplication(HINSTANCE hInstance, const uint32_t& width = 800, const uint32_t& height = 600);
+      // 回调函数中处理 message 的函数定义
+      void handleMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+      // 每一帧都会调用，捕获及分发窗体消息
+      bool peekMessage();
+  private:
+      BOOL createWindow(HINSTANCE hInstance);
+      ATOM registerWindowClass(HINSTANCE hInstance);
+      static Application* mInstance; // 静态指针
+      bool mAlive{ true };           // 程序运行状态
+      HINSTANCE mWindowInst;         // 程序实例
+      WCHAR mWindowClassName[100] = L"AppWindow"; // 窗体类名
+      HWND mHwnd;                    // 窗体句柄
+      int mWidth = 800;              // 窗体宽度
+      int mHeight = 600;             // 窗体高度
+  };
+```
+
+```cpp
+  #include "application.h"
+  // 初始化静态成员
+  Application* Application::mInstance = nullptr;
+  Application* Application::getInstance()
+  {
+          if (mInstance == nullptr)
+          {
+                  mInstance = new Application();
+          }
+          return mInstance;
+  }
+  Application::Application() {
+          // 构造函数逻辑
+  }
+  Application::~Application() {
+          // 析构函数逻辑
+  }
+  // 定义回调函数wndproc
+  LRESULT CALLBACK Wndproc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+  {
+          // Application单例处理message
+          Application::getInstance()->handleMessage(hWnd, message, wParam, lParam);
+          return(DefWindowProc(hWnd, message, wParam, lParam));
+  }
+  // 注册窗体类，创建一个窗体并显示
+  bool Application::initApplication(HINSTANCE hInstance, const uint32_t& width, const uint32_t& height)
+  {
+          mWidth = width;
+          mHeight = height;
+          // 初始化窗体类型，并注册
+          registerWindowClass(hInstance);
+          // 生成一个窗体，并显示
+          if (!createWindow(hInstance))
+          {
+                  return false;
+          }
+          return true;
+  }
+  // 窗口类型创建
+  ATOM Application::registerWindowClass(HINSTANCE hInstance)
+  {
+          WNDCLASSEXW wndClass;
+          wndClass.cbSize = sizeof(WNDCLASSEX);
+          wndClass.style = CS_HREDRAW | CS_VREDRAW; // 水平&垂直大小发生变化时，重绘窗口
+          wndClass.lpfnWndProc = Wndproc; // 窗口事件回调函数
+          wndClass.cbClsExtra = 0;
+          wndClass.cbWndExtra = 0;
+          wndClass.hInstance = hInstance; // 应用程序句柄
+          wndClass.hIcon = LoadIcon(NULL, IDI_APPLICATION); // 应用程序图标，即任务栏的大图标
+          wndClass.hCursor = LoadCursor(NULL, IDC_ARROW); // 鼠标图标
+          wndClass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH); // 窗口背景色为黑
+          wndClass.lpszMenuName = NULL;
+          wndClass.lpszClassName = mWindowClassName; //窗体类名
+          wndClass.hIconSm = LoadIcon(NULL, IDI_WINLOGO); // 窗口标题图标
+          return RegisterClassExW(&wndClass);
+  }
+  BOOL Application::createWindow(HINSTANCE hInstance)
+  {
+          mWindowInst = hInstance;
+          // 设置窗体风格
+          /*
+          * 拥有普通程序主窗口的所有特点，且必须有边框
+          * 被兄弟窗口挡住区域不绘制
+          * 被子窗口挡住区域不绘制
+          */
+          auto dwExStyle = WS_EX_APPWINDOW;
+          auto dwStyle = WS_OVERLAPPEDWINDOW | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
+          // 由于存在标题栏等区域，所以需要计算中间显示区域的大小
+          RECT windowRect;
+          windowRect.left = 0L;
+          windowRect.top = 0L;
+          windowRect.right = (long)mWidth;
+          windowRect.bottom = (long)mHeight;
+          AdjustWindowRectEx(
+                  &windowRect,
+                  dwStyle,
+                  FALSE, // 是否使用menu
+                  dwExStyle);
+          // 根据上述参数创建窗口实例，并将句柄指向该实例
+          mHwnd = CreateWindowW(
+                  mWindowClassName,
+                  (LPCWSTR)"SoftRenderer", //窗口标题
+                  dwStyle,
+                  500, // x位置，相对左上角
+                  500, // y位置，相对左上角
+                  windowRect.right - windowRect.left,
+                  windowRect.bottom - windowRect.top,
+                  nullptr, // 父窗体
+                  nullptr, // 菜单栏
+                  hInstance, // 程序实例
+                  nullptr); // 额外参数
+          if (!mHwnd)
+          {
+                  return FALSE;
+          }
+          ShowWindow(mHwnd, true);
+          UpdateWindow(mHwnd);
+          return TRUE;
+  }
+  bool Application::peekMessage()
+  {
+          MSG msg;
+          // 调用windows API捕获消息
+          if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+          {
+                  TranslateMessage(&msg); // 加工消息
+                  DispatchMessage(&msg); // 分发消息
+          }
+          return mAlive;
+  }
+  void Application::handleMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+  {
+          switch (message)
+          {
+          case WM_CLOSE:
+          {
+                  DestroyWindow(hWnd); // 销毁当前窗体实例，会自动发出WM_DESTROY
+                  break;
+          }
+          case WM_PAINT:
+          {
+                  PAINTSTRUCT ps;
+                  HDC hdc = BeginPaint(hWnd, &ps);
+                  EndPaint(hWnd, &ps);
+          }
+          break;
+          case WM_DESTROY:
+          {
+                  PostQuitMessage(0); // 发出线程终止请求
+                  mAlive = false;
+                  break;
+          }
+          }
+  }
+```
+
+```cpp
+#pragma once
+// 常用库
+#include<iostream>
+#include<vector>
+#include<map>
+#include<cmath>
+#include<assert.h>
+// 常用宏
+#define PI 3.14159265358979323
+#define DEG2RAD(theta) (0.01745329251994329 * (theta))
+#define FRACTION(v) ((v) - (int)(v))
+```
+
+</details>
+
+<br></br>
+#### 直线绘制
+
+**~~WindowsGDI 介绍~~**
+
+GDI: Graphic Device Interface 图形设备接口
+
+- GDI 在 Windows 的子系统，负责在显示器和打印机上显示图形
+
+HDC (Handle of Device Context) - DC 句柄
+
+- 在 Windows 操作系统中，显示资源属于所有 APP 的公用资源，公用就需要虚拟化成多个虚拟设备
+- 每个窗体运行在其虚拟显示设备上，其窗体句柄就对应了一个正在使用的设备 DC
+- 每个 HDC 句柄背后都记录了当前窗体显示对应的内存/尺寸等信息
+- 如果想在窗口上绘制物体，就需要向 HDC 所指代的设备内存上输出颜色数据即可
+
+---
+
+**HDC 获取与创建与拷贝**
+
+```cpp
+// 获取当前窗体HDC
+hDC = GetDC(hwnd);
+// 创建与当前窗体兼容的HDC2（内存格式/分辨率兼容）
+hDC2 = CreateCompatibleDC(hDC);
+// 把hDC2对应内容的数据拷贝到HDC
+BitBlt(hDC, xdst, ydst, width, height, hDC2, xsrc, ysrc, SRCCOPY);
+```
+
+---
+
+**HBITMAP**
+
+HDC与绘图
+
+- HDC虚拟设备资源，一般情况下指的就是绘图设备内存
+- 想向HDC上输出颜色数据，就需要对其进行设置
+
+位图
+
+- 在Windows GDI中，位图对象句柄是 _HBITMAP_
+- 每个HDC都可以使用自己的虚拟资源，分配多张位图对象
+- 例：拷贝操作中如选择 HDC2 中的 bmp2 作为激活位图，则对 HDC 的拷贝错做是在激活位图 bmp2 对应内存区域做的操作，不影响其他位图
+
+```cpp
+// 激活bmp2，作为主位图对象
+SelectObject(hDC, bmp2);
+```
+
+---
+
+**HBITMAP的创建**
+
+```cpp
+CreateDIBSection()
+```
+
+<img
+	src='/assets/CG/CppSoftRenderer/img6.png'
+	alt='img6'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+**~~绘图环境与实例~~**
+
+**绘图步骤**
+
+- GDI 绘制环境搭建
+- 搭建模拟 GPU 的代码架构
+- 点的绘制实践
+
+---
+
+<details>
+  <summary>**相关代码**</summary>
+
+```cmake
+cmake版本要求
+cmake_minimum_required(VERSION 3.12)
+工程名字
+project(Graphic)
+C++版本要求
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+添加子目录
+add_subdirectory(application)
+add_subdirectory(gpu)
+添加可执行文件
+add_executable(softRenderer "main.cpp")
+链接库
+target_link_libraries(softRenderer applicationLib gpuLib)
+查找所有源文件
+file(GLOB_RECURSE APPLICATIONS ./ *.cpp)
+创建静态库
+add_library(applicationLib ${APPLICATIONS})
+查找所有源文件
+file(GLOB_RECURSE GPU ./ *.cpp)
+创建静态库
+add_library(gpuLib ${GPU})
+```
+
+```cpp
+  #include <Windows.h>
+  #include <iostream>
+  #include "application/application.h"
+  #include "gpu/gpu.h"
+  // 通过linker来选择入口是main还是wWinMain，并决定是否启用console
+  #pragma comment(linker, "/subsystem:console /entry:wWinMainCRTStartup")
+  /*
+  绘制逻辑
+  */
+  void render()
+  {
+      sgl->clear(); //清空当前画布
+      // 绘制直线
+      for (uint32_t i = 0; i < app->getWidth(); ++i)
+      {
+          sgl->drawPoint(i, 100, RGBA(255,255,255,255));
+      }
+  }
+  /*
+  主循环流程再wWinMain函数中
+  窗体构建、消息处理以及其他方面的细节都封装在了application类中
+  */
+  int APIENTRY wWinMain(
+
+  In
+  HINSTANCE hInstance,
+
+  In_opt
+  HINSTANCE hPrevInstance,
+
+  In
+  LPWSTR lpCmdLine,
+
+  In
+  int nCmdShow) {
+      if (!app->initApplication(hInstance, 800, 600)) {
+          return -1;
+      }
+      if (!app->initApplication(hInstance, 800, 600))
+      {
+          return -1;
+      }
+      // 将指向bmp内存的指针配置到sgl(gpu)当中
+      // app->getCanvs: 获取指向bmp内存（即mCanvasBuffer）的指针，并用于创建FrameBuffer
+      sgl->initSurface(app->getWidth(), app->getHeight(), app->getCanvas());
+      // 主循环流程
+      bool alive = true;
+      while (alive) {
+          alive = app->peekMessage(); // 捕获窗口事件
+          render();
+          app->show(); // 调用bitblt()将mCanvasDC拷贝到hDC上并显示
+      }
+      return 0;
+  }
+```
+
+```cpp
+  #pragma once
+  #include "../global/base.h"
+  #include <Windows.h>
+  // 获取 Application 类的单例
+  #define app Application::getInstance()
+  class Application {
+  public:
+      static Application* getInstance(); // 静态成员函数：创建单例
+      Application();                     // 构造函数
+      ~Application();                    // 析构函数
+      // 成员函数：注册窗体类，创建一个窗体并显示
+      bool initApplication(HINSTANCE hInstance, const uint32_t& width = 800, const uint32_t& height = 600);
+      // 回调函数中处理 message 的函数定义
+      void handleMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+      // 每一帧都会调用，捕获及分发窗体消息
+      bool peekMessage();
+      void show();
+      uint32_t getWidth() const { return mWidth; }
+      uint32_t getHeight() const { return mHeight; }
+      void* getCanvas() const { return mCanvasBuffer; }
+  private:
+      BOOL createWindow(HINSTANCE hInstance);
+      ATOM registerWindowClass(HINSTANCE hInstance);
+      static Application* mInstance; // 静态指针
+      bool mAlive{ true };           // 程序运行状态
+      HINSTANCE mWindowInst;         // 程序实例
+      WCHAR mWindowClassName[100] = L"AppWindow"; // 窗体类名
+      HWND mHwnd;                    // 窗体句柄
+      int mWidth = 800;              // 窗体宽度
+      int mHeight = 600;             // 窗体高度
+      HDC mhDC; // 当前窗口的主DC（双缓存：用于显示）
+      HDC mCanvasDC; // 创建出来的，与主DC兼容的绘图用的dc （双缓存：用于绘图）
+      HBITMAP mhBmp; // mCanvasDC内部生成的bmp
+      void* mCanvasBuffer{ nullptr }; // mhBmp对应的内存起始位置指针
+  };
+
+```
+
+</details>
+
+<br></br>
+**~~brensenham 直线绘制算法~~**
+
+**简单方案**
+
+<img
+	src='/assets/CG/CppSoftRenderer/img7.png'
+	alt='img7'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<img
+	src='/assets/CG/CppSoftRenderer/img8.png'
+	alt='img8'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+步骤
+
+- 根据两个点计算直线斜率，得出直线表达式
+- 从第一个点开始绘制
+- x 轴坐标步进，代入表达式求出步进后的 y
+
+缺点
+
+- 浮点数运算效率低
+
+---
+
+**Brensenham 直线绘制算法**
+
+_情况一：x1 < x2, y1 < y2 且 0 < k < 1_
+
+<img
+	src='/assets/CG/CppSoftRenderer/img9.png'
+	alt='img9'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<img
+	src='/assets/CG/CppSoftRenderer/img10.png'
+	alt='img10'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+_情况二：x1 < x2, y1 < y2 ,斜率k > 1_
+
+- 把起点的 xy 值互换，终点的 xy 值互换，即可转换为情况一进行计算
+- 在绘制过程中，把每个点的 x 和 y 值互换回去
+
+<img
+	src='/assets/CG/CppSoftRenderer/img11.png'
+	alt='img11'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+_情况三：x1 < x2, y1 > y2, 斜率k_
+
+- 将起点和终点的 y 值改变符号，即可转换为情况一进行计算
+- 在绘制过程中，把每个点的 y 值换回去
+
+<img
+	src='/assets/CG/CppSoftRenderer/img12.png'
+	alt='img12'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+_情况四：x1 > x2_
+
+- 将起点和终点的坐标互换，相当于反着画（但结果是一样的）
+
+<img
+	src='/assets/CG/CppSoftRenderer/img13.png'
+	alt='img13'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+**实际案例**
+
+<img
+	src='/assets/CG/CppSoftRenderer/img14.png'
+	alt='img13'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<img
+	src='/assets/CG/CppSoftRenderer/img15.png'
+	alt='img13'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+**~~直线算法代码~~**
+
+**步骤**
+
+- 光栅化器 Raster 类设计
+- Brensenham 算法实现
+- 直线算法测试
+
+---
+
+**光栅化 Raster 类的设计**
+
+添加 Point 结构体用于存储点的坐标和颜色信息
+
+```cpp
+  // Point类型包括坐标和颜色
+  struct Point
+  {
+          int32_t x;
+          int32_t y;
+          RGBA color;
+  };
+```
+
+<br></br>
+
+添加 Raster 类，声明 rasterizeLine()函数
+
+- 输入 Points 数组和两个 Point 变量
+- 返回光栅化后的像素数组 Ponit
+
+```cpp
+  #pragma once
+  #include "../global/base.h"
+  /*
+  Raster 类
+  对外提供静态函数接口，传入离散的点，返回光栅后的像素数组
+  */
+  class Raster
+  {
+  public:
+          Raster();
+          ~Raster();
+          // rasterizeLine()函数声明
+          static void rasterizeLine(
+                  std::vector<Point> results, // 光栅后的像素数组
+                  const Point& v0,
+                  const Point& v1
+                  );
+  };
+```
+
+<br></br>
+
+添加drawLine()函数
+
+- 内部调用 rasterizeLine()用于光栅化直线并将结果绘制在屏幕上
+
+```cpp
+  class GPU
+  {
+  public:
+      ...
+      // 传入两个点，绘制直线
+      void drawLine(const Point& p1, const Point& p2);
+
+      ...
+  }
+```
+
+```cpp
+  // 绘制直线
+  void GPU::drawLine(const Point& p1, const Point& p2)
+  {
+          std::vector<Point> pixels;
+          Raster::rasterizeLine(pixels, p1, p2); // 调用Raster类的静态接口绘制直线
+          for (auto p : pixels)
+          {
+                  drawPoint(p.x, p.y, p.color); //将像素数组中的每一个点都绘制出来
+          }
+  }
+```
+
+---
+
+**Brensenham 算法实现**
+
+定义 Raster::rasterLine()函数，并在里面实现 Brensenham 算法
+
+<details>
+  <summary>Brensenham算法代码</summary>
+  
+```cpp
+  #include "raster.h"
+  Raster::Raster() {};
+  Raster::~Raster() {};
+  void Raster::rasterizeLine(
+          std::vector<Point> results, // 光栅后的像素数组
+          const Point& v0,
+          const Point& v1
+          )
+  {
+          Point start = v0;
+          Point end = v1;
+          // 处理不同的起点终点位置情况使其满足 x1 < x2, y1 < y2, 0 < K < 1 ---------------
+          /*
+          * 1. 保证 x 的方向是从小到大的
+          * - 如果x2 < x1, 则互换起点和终点
+          */
+          if (start.x > end.x)
+          {
+                  auto tmp = start;
+                  start = end;
+                  end = tmp;
+          }
+          results.push_back(start);
+          /*
+          * 2. 保证 y 的方向是从小到大的
+          * - 如果 y1 > y2, 则翻转 y 的正负
+          * - 如果产生翻转操作，则需要记录
+          */
+          bool flipY = false;
+          if (start.y < end.y)
+          {
+                  flipY = true;
+                  start.y *= -1.0f;
+                  end.y *= -1.0f;
+          }
+          /*
+          * 3. 保证斜率 0 < k < 1
+          * - 如果斜率 k > 1, 则互换x和y坐标
+          * - 如果斜率 k > 1, 则互换x和y坐标
+          * - 如果产生坐标互换，则需要记录
+          */
+          bool swapXY = false;
+          int deltaX = static_cast<int>(end.x - start.x); // 强转成int
+          int deltaY = static_cast<int>(end.y - start.y); // 强转成int
+          // k = deltaY / deltaX
+          // deltaY > deltaX --- k > 1
+          if (deltaY > deltaX)
+          {
+                  swapXY = true;
+                  std::swap(start.x, start.y);
+                  std::swap(end.x, end.y);
+                  std::swap(deltaX, deltaY);
+          }
+          // Brensenham 算法 -----------------------------------------------
+          int currentX = static_cast<int>(start.x);
+          int currentY = static_cast<int>(start.y);
+          int resultX = 0;
+          int resultY = 0;
+          Point currentPoint;
+          int p = 2 * deltaY - deltaX; //起始p
+          // 从起点的x开始步进，直到终点的x停止
+          for (int i = 0; i < deltaX; ++i)
+          {
+                  // 如果 p >= 0, 即 d1 > d0, y_(i+1) = y_i + 1
+                  // p2 - p1 = 2deltaY - 2deltaX(y_(i+1) - y_i)
+                  if (p >= 0)
+                  {
+                          currentY += 1;
+                          p -= 2 * deltaX;
+                  }
+                  p += 2 * deltaY;
+                  currentX += 1;
+                  // 处理前面经过的变换
+                  resultX = currentX;
+                  resultY = currentY;
+                  if (swapXY)
+                  {
+                          std::swap(resultX, resultY);
+                  }
+                  if (flipY)
+                  {
+                          resultY *= -1;
+                  }
+                  // 产生新的点, 并添加到数组中
+                  currentPoint.x = resultX;
+                  currentPoint.y = resultY;
+                  results.push_back(currentPoint);
+          }
+  }
+```
+
+</details>
+
+<br></br>
+
+**~~彩色直线绘制~~**
+
+**如何在屏幕上绘制彩色的直线**
+
+- 颜色插值算法
+
+---
+
+**直线插值算法实操**
+
+- 如果每次都需要计算点到点的距离，对于性能上很浪费，可以将二维的点比较压缩成一维的比较
+- 相似三角形对应边比例相同
+
+<img
+	src='/assets/CG/CppSoftRenderer/img16.png'
+	alt='img16'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+<details>
+  <summary>相关代码</summary>
+
+```cpp
+  void Raster::rasterizeLine(
+        std::vector<Point>& results, // 光栅后的像素数组
+        const Point& v0,
+        const Point& v1
+        )
+  {
+      ...
+      // 产生新的点, 并添加到数组中
+      currentPoint.x = resultX;
+      currentPoint.y = resultY;
+      // 对新的点进行颜色插值
+      interpolateLine(v0, v1, currentPoint);
+      results.push_back(currentPoint);
+  }
+```
+
+```cpp
+  void Raster::interpolateLine(const Point& v0, const Point& v1, Point& target)
+  {
+          float weight = 1.0f;
+
+          // 如果起点和终点的x坐标不相同，就用x坐标来计算weight
+          if (v0.x != v1.x)
+          {
+                  weight = (float)(target.x - v0.x) / (float)(v1.x - v0.x);
+          }
+          // 如果起点和终点的x坐标相同，就用y坐标来计算weight
+          else if (v0.y != v1.y)
+          {
+                  weight = (float)(target.y - v0.y) / (float)(v1.y - v0.y);
+          }
+          // 根据weight计算RGBA插值
+          RGBA result;
+          result.mR = v1.color.mR * weight + v0.color.mR * (1.0f - weight);
+          result.mG = v1.color.mG * weight + v0.color.mG * (1.0f - weight);
+          result.mB = v1.color.mB * weight + v0.color.mB * (1.0f - weight);
+          result.mA = v1.color.mA * weight + v0.color.mA * (1.0f - weight);
+          target.color = result;
+  }
+```
+
+- 绘制彩色直线
+
+```cpp
+  void render()
+  {
+      sgl->clear(); //清空当前画布
+      Point p1{ 0, 0, RGBA(255,0,0,255) };
+      Point p2{ 800, 600, RGBA(0, 255,0,255) };
+      sgl->drawLine(p1, p2);
+  }
+```
+
+- 绘制彩色线圈动画
+
+```cpp
+  void render()
+  {
+      sgl->clear(); //清空当前画布
+
+      int r = 200;
+      Point c = { 400, 300 };
+      for (float i = 0; i < 360; i += 10)
+      {
+          float radian = DEG2RAD(i);
+          int x = r * sin(radian) + c.x;
+          int y = r * cos(radian) + c.y;
+          Point pt{ x, y, RGBA(rand() % 255, rand() % 255, rand() % 255, 255)};
+          sgl->drawLine(c, pt);
+      }
+  }
+```
+
+</details>
+
+<br></br>
+
+<img
+	src='/assets/CG/CppSoftRenderer/img17.png'
+	alt='img17'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+### 三角形绘制
+
+#### 线性代数
+
+**~~向量类代码设计 vector.h~~**
+
+定义了 Vector2, Vector3, Vector4 以及重载相关计算
+
+<details>
+  <summary>vector.h 相关代码</summary>
+  ```cpp
+    #pragma once
+    #include "../global/base.h"
+    
+    // 对vector2, vector3, vector4 类的实现
+    namespace math
+    {
+      // Vector3 和 Vector4的前置声明
+      template<typename T>
+      class Vector3;
+      template<typename T>
+      class Vector4;
+
+      template<typename T>
+      class Vector2
+      {
+      public:
+        Vector2() { x = y = 0; } // 默认构造函数：(0,0)
+        Vector2(T x, T y) : x(x), y(y) {} // 传入x,y构造Vector2 (x,y)
+        Vector2(const Vector2<T>& v) : x(v.x), y(v.y) {} //传入另一个Vector2构造Vector2
+        Vector2(const Vector3<T>& v) : x(v.x), y(v.y) {} //传入另一个Vector3构造Vector2
+        Vector2(const Vector4<T>& v) : x(v.x), y(v.y) {} //传入另一个Vector4构造Vector2
+
+        // 获取向量某个分量
+        // 重载 [] 运算符
+        T operator[](int i) const
+        {
+                assert(i >= 0 && i < 2); //只有当 i = 0 /1时才往下运行
+                // 根据索引返回x或y分量
+                if (i == 0) return x;
+                return y;
+        }
+        /*
+        * 给向量某个分量赋值
+        * 通过返回引用，来达到赋值的作用
+        * 重载 [] 运算符
+        */
+        T& operator[](int i)
+        {
+                assert(i >= 0 && i < 2);
+                if (i == 0) return x;
+                return y;
+        }
+        /*
+        * 通过Vector3赋值Vector2
+        * 赋值运算符重载
+        */
+        Vector2<T>& operator=(const Vector3<T>&v)
+        {
+                x = v.x;
+                y = v.y;
+                return *this;
+        }
+        /*
+        * Vector2 + Vector2 加法
+        * 加法运算符重载
+        */
+        Vector2<T> operator+(const Vector2<T>& v) const
+        {
+                return Vector2(x + v.x, y + v.y);
+        }
+        /*
+        * Vector2 + Vector2 加法并赋值
+        * +=运算符重载
+        */
+        Vector2<T> operator+= (const Vector2<T>&v)
+        {
+                x += v.x;
+                y += v.y;
+                return *this;
+        }
+        /*
+        * Vector2 - Vector2 加法
+        * 减法运算符重载
+        */
+        Vector2<T> operator-(const Vector2<T>& v) const
+        {
+                return Vector2(x - v.x, y - v.y);
+        }
+        /*
+        * Vector2 - Vector2 加法并赋值
+        * -=运算符重载
+        */
+        Vector2<T> operator-= (const Vector2<T>& v)
+        {
+                x -= v.x;
+                y -= v.y;
+                return *this;
+        }
+        /*
+        * 向量乘标量
+        * 运算符重载
+        */
+        Vector2<T> operator* (T s) const
+        {
+                return Vector2(x * s, y * s);
+        }
+        /*
+        * 向量乘标量并赋值
+        * 运算符重载
+        */
+
+        Vector2<T> operator*(T s)
+        {
+                x *= s;
+                y *= s;
+                return *this;
+        }
+        Vector2<T> operator*(const Vector2<T>& v) const
+        {
+                return Vector2<T>(x * v.x, y * v.y);
+        }
+        /*
+        * 向量除以标量
+        * / 运算符重载
+        */
+        Vector2<T> operator/(T f) const
+        {
+                assert(f != 0);
+                float inv = static_cast<T>(1) / f;
+                return Vector2(x * inv, y * inv);
+        }
+        /*
+        * 向量除以标量并赋值
+        * / 运算符重载
+        */
+        Vector2<T> operator/(T f)
+        {
+                assert(f != 0);
+                float inv = static_cast<T>(1) / f;
+                x *= inv;
+                y *= inv;
+                return *this;
+        }
+        /*
+        * 取反并赋值
+        * - 操作符重载
+        */
+        Vector2<T> operator-()
+        {
+                return Vector2(-x, -y);
+        }
+        void print()
+        {
+                std::cout << "Vector2 is: " << std::endl;
+                std::cout << "x = " << x << ", y = " << y << std::endl;
+                std::cout << std::endl;
+        }
+
+      public:
+        T x, y;
+      }
+
+      template<typename T>
+      class Vector3
+      {
+      public:
+        Vector3() { x = y = z = 0; } // 默认构造
+        Vector3(T x, T y, T z) : x(x), y(y), z(z) {} //赋值构造
+        Vector3(const Vector3<T>& v) :x(v.x), y(v.y), z(v.z) {} //用vector3构造Vector3
+        Vector3(const Vector4<T>& v) :x(v.x), y(v.y), z(v.z) {} //用vector4构造Vector3
+        T operator[](int i) const
+        {
+                assert(i>=0 && i<=2);
+                if (i == 0) return x;
+                if (i == 1) return y;
+                return z;
+        }
+        T& operator[](int i)
+        {
+                assert(i >= 0 && i <= 2);
+                if (i == 0) return x;
+                if (i == 1) return y;
+                return z;
+        }
+        // 用Vector2赋值Vector3, 只改变xy值
+        Vector3<T>& operator=(const Vector2<T>& v)
+        {
+                x = v.x;
+                y = v.y;
+                return *this;
+        }
+        // 用Vector4赋值Vector3,改变xyz值
+        Vector3<T>& operator=(const Vector4<T>& v)
+        {
+                x = v.x;
+                y = v.y;
+                z = v.z;
+                return *this;
+        }
+        // 加法
+        Vector3<T> operator+(const Vector3<T>& v) const
+        {
+                return Vector3<T>(x+v.x, y+v.y, z+v.z);
+        }
+        // +=
+        Vector3<T> operator+=(const Vector3<T>& v)
+        {
+                x += v.x;
+                y += v.y;
+                z += v.z;
+                return *this;
+        }
+        // 减法
+        Vector3<T> operator-(const Vector3<T>& v) const
+        {
+                return Vector3<T>(x - v.x, y - v.y, z - v.z);
+        }
+        // -=
+        Vector3<T> operator-=(const Vector3<T>& v)
+        {
+                x -= v.x;
+                y -= v.y;
+                z -= v.z;
+                return *this;
+        }
+        // 乘法
+        Vector3<T> operator*(T s) const
+        {
+                return Vector3(v.x * s, v.y * s, v.z * s);
+        }
+        // *=
+        Vector3<T> operator*=(T s)
+        {
+                x *= s;
+                y *= s;
+                z *= s;
+                return *this;
+        }
+        // 除法
+        Vector3<T> operator/(T f) const
+        {
+                assert(f != 0);
+                float inv = 1.0 / f;
+                Vector3<T>(x * inv, y * inv, z*inv);
+        }
+        // /=
+        Vector3<T> operator/=(T f)
+        {
+                assert(f != 0);
+                float inv = 1.0 / f;
+                x *= inv;
+                y *= inv;
+                z *= inv;
+                return *this;
+        }
+        // 取反
+        Vector3<T> operator-() const
+        {
+                return vector3<T>(-x, -y, -z);
+        }
+        // print
+        void print()
+        {
+                std::cout << "Vector3 is: " << std::endl;
+                std::cout << "x = " << x << ", y = " << y << ", z = "<< z << std::endl;
+                std::cout << std::endl;
+        }
+      public:
+              T x, y, z;
+      };
+
+
+      template<typename T>
+      class Vector4
+      {
+      public:
+        Vector4() { x = y = z = w = 0; } // 默认构造
+        Vector4(T x, T y, T z, T w) : x(x), y(y), z(z), w(w) {} //赋值构造
+        Vector4(const Vector4<T>& v) :x(v.x), y(v.y), z(v.z), w(v.w) {} //用vector4构造Vector4
+
+        T operator[](int i) const
+        {
+                assert(i >= 0 && i <= 3);
+                if (i == 0) return x;
+                if (i == 1) return y;
+                if (i == 2) return z;
+                return w;
+        }
+        T& operator[](int i)
+        {
+                assert(i >= 0 && i <= 3);
+                if (i == 0) return x;
+                if (i == 1) return y;
+                if (i == 2) return z;
+                return w;
+        }
+        // 用Vector2赋值Vector4, 只改变xy值
+        Vector4<T>& operator=(const Vector2<T>& v)
+        {
+                x = v.x;
+                y = v.y;
+                return *this;
+        }
+        // 用Vector3赋值Vector4,改变xyz值
+        Vector4<T>& operator=(const Vector3<T>& v)
+        {
+                x = v.x;
+                y = v.y;
+                z = v.z;
+                return *this;
+        }
+        // 加法
+        Vector4<T> operator+(const Vector4<T>& v) const
+        {
+                return Vector4<T>(x + v.x, y + v.y, z + v.z, w + v.w);
+        }
+        // +=
+        Vector4<T> operator+=(const Vector4<T>& v)
+        {
+                x += v.x;
+                y += v.y;
+                z += v.z;
+                w += v.w;
+                return *this;
+        }
+        // 减法
+        Vector4<T> operator-(const Vector4<T>& v) const
+        {
+                return Vector3<T>(x - v.x, y - v.y, z - v.z, w - v.w);
+        }
+        // -=
+        Vector4<T> operator-=(const Vector4<T>& v)
+        {
+                x -= v.x;
+                y -= v.y;
+                z -= v.z;
+                w -= v.w;
+                return *this;
+        }
+        // 乘法
+        Vector4<T> operator*(T s) const
+        {
+                return Vector4(v.x * s, v.y * s, v.z * s, v.w * s);
+        }
+        // *=
+        Vector4<T>& operator*=(T s)
+        {
+                x *= s;
+                y *= s;
+                z *= s;
+                w *= s;
+                return *this;
+        }
+        // Vector4 * Vector3， 只乘xyz
+        Vector4<T>& operator*=(const Vector3<T>& v)
+        {
+                x *= v.x;
+                y *= v.y;
+                z *= v.z;
+                return *this;
+        }
+        // 除法
+        Vector4<T> operator/(T f) const
+        {
+                assert(f != 0);
+                float inv = 1.0 / f;
+                Vector4<T>(x * inv, y * inv, z * inv, w * inv);
+        }
+        // /=
+        Vector4<T>& operator/=(T f)
+        {
+                assert(f != 0);
+                float inv = 1.0 / f;
+                x *= inv;
+                y *= inv;
+                z *= inv;
+                w *= inv;
+                return *this;
+        }
+      }
+    }
+
+
+```
+</details>
+
+
+<br></br>
+**~~向量功能函数代码设计 mathFunctions.h~~**
+
+<details>
+<summary>mathFunctions.h 相关代码</summary>
+</details>
+
+
+
+#### 三角形绘制
+
+**~~三角形扫描线绘制算法代码设计~~**
+
+
+
+
+
+
+
+
+
+
+
+
+
+**~~三角形中心插值算法~~**
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+**~~彩色三角形绘制~~**
+```
