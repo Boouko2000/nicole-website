@@ -8,6 +8,8 @@ tags:
 title: Catlike Coding Rendering
 ---
 
+import LocalVideo from '../../components/LocalVideo.astro'
+
 ### 渲染管线
 
 #### 为什么使用 GPU 而不是 CPU
@@ -56,14 +58,421 @@ GPU 处理过程
 
 **应用阶段**
 
-- CPU 端运行
-- 包括用户输入处理、碰撞检测、动画、物理模拟、全局加速算法等
-- 输出数据：屏幕上的几何元素（点线面）、纹理、参数等
+CPU 端运行
+
+包括用户输入处理、碰撞检测、动画、_物理模拟_ 、全局加速算法等
+
+输出数据：屏幕上的几何元素（点线面）、纹理、参数等
 
 ---
 
 **几何运算阶段**
 
-处理物体变换、投影和其他逐顶点或逐三角面的几何操作
+_处理物体变换、投影和其他逐顶点或逐三角面的几何操作_
 
-_[笔记版云中...]_
+子阶段：
+
+- 顶点着色
+- 投影
+- 剪裁
+- 屏幕映射
+
+顶点着色阶段
+
+- 顶点位置计算、输出法线及纹理坐标等信息
+- 顶点坐标变换：模型空间 > 世界空间 > 相机空间 > 裁剪空间 > NDC > 屏幕空间
+- 顶点着色器无法创造或者删除顶点，也无法获取周围顶点的信息，每个顶点都是独立处理的
+
+剪裁阶段
+
+- 部分在视觉空间里的图素才会被剪裁
+- 剪裁阶段使用四维 _齐次坐标_ 。因为透视投影后，三角面无法使用 _线性插值_ ，第四个数值的作用就是为了能正常插值
+
+屏幕映射阶段
+
+- 剪裁后的结果会以 _三维坐标_ 形式传入此阶段，被称为窗口坐标。窗口坐标的 xy 值会缩放到和屏幕始末像素一致，被称为屏幕坐标
+- Z 轴 + 屏幕坐标 = 窗口坐标
+
+---
+
+**光栅化阶段**
+
+光栅化使用三个顶点形成的三角面作为输入，然后找到这个三角面内所有像素，再传入下一阶段
+
+光栅化子阶段：
+
+- 三角面设置（Primitive Assembly）
+- 三角形遍历：检查每个像素是否被某个三角形覆盖，是的话生成一个片元并进行像素插值
+
+---
+
+**像素运算阶段**
+
+像素运算子阶段
+
+- 像素 shading
+- 合并
+
+片元 shading
+
+- 使用插值后的像素数据作为输入
+- 输出颜色
+
+合并阶段
+
+- 决定片元可见性（深度测试、模版测试等）
+- 混合上阶段输出的颜色和颜色缓冲区中的颜色
+
+### 着色器基础
+
+#### 从物体到图像
+
+Unity 是如何知道什么网格应该被绘制
+
+- 网格上有 `Mesh Renderer` 组件
+- 确定物体的 bounding box 与摄像机的视锥相交
+- GPU 被通知进行渲染
+
+<img
+	src='/assets/TA/catlikeCoding/img1.png'
+	alt='img1'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+<br></br>
+**~~第一个 Shader~~**
+
+`SubShader` 的作用：可以通过 sub-shaders 将不同的 shader 变体分组以应对不同的平台
+
+`Pass` 的作用：真正的渲染命令写在 pass 中，多个 pass 表示物体将被多次渲染
+
+<br></br>
+**~~着色程序~~**
+
+渲染管线（简化版）
+
+<img
+	src='/assets/TA/catlikeCoding/img2.png'
+	alt='img1'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+`#pragma` 用于发出编译器指令
+
+- `#pragma vertex MyVertexProgram` 指明顶点着色器
+- `#pragma fragment MyFragmentProgram` 指明片元着色器
+
+<br></br>
+**~~Shader 编译~~**
+
+根据不同的平台，unity 的 shader 编译器会将 shader 代码转换成不同的程序
+
+- DirectX - Windows
+- OpenGL - Macs
+- OpenGL ES - 移动端
+
+---
+
+查看 shader 在不同平台上的运行
+
+<img
+	src='/assets/TA/catlikeCoding/img3.png'
+	alt='img1'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+- 手动选择其他目标编译平台
+
+<br></br>
+**~~包含其他文件~~**
+
+`#include` 指令：加载其他文件内容到当前文件
+
+这些文件的内容本质上是被复制到当前文档，这一步发生在 pre-processing step，在这个阶段所有的指令将被运行（如#pragma， #include）。这之后才进行真正的编译
+
+---
+
+`#include "UnityCG.cginc"`
+
+<img
+	src='/assets/TA/catlikeCoding/img4.png'
+	alt='img1'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- `UnityShaderVariables.cginc` 包含渲染所需的许多 shader 变量，如摄像机与光照数据
+- `HLSLSupport.cginc` 负责应对不同的硬件平台
+- `UnityInstancing.cginc` 负责实例化相关的支持
+
+<br></br>
+**~~输出~~**
+
+顶点着色器输出：四维向量- _位置_ `float4`
+
+`SEMANTIC:  SV_POSITION`
+
+- Semantic 用于告诉 GPU 这个输出的数据是什么数据、用在什么地方
+- `SV_POSITION` System value, final vertex position
+
+---
+
+片元着色器输出：四维向量- _颜色_ `float4`
+
+- `SEMANTIC: SV_TARGET`
+- 默认 shader 目标：_帧缓冲区_
+
+<br></br>
+**~~顶点变换~~**
+
+将模型空间下顶点坐标乘以 MVP 矩阵转换到是 _世界空间_ 下
+
+`UNITY_MATRIX_MVP`
+
+<br></br>
+#### 像素上色 **~~Shader 属性~~**
+
+Shader 属性声明 `_Tint("Tint", Color) = (1,1,1,1);`
+
+访问属性 `float4 _Tint;`
+
+<br></br>
+**~~从顶点到片元~~**
+
+顶点 - `顶点着色器` 顶点数据 - `插值器` 插值后数据 - `片元着色器`
+
+将模型的本地坐标（object-space）通过颜色表示
+
+<img
+	src='/assets/TA/catlikeCoding/img5.png'
+	alt='img5'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+```csharp
+// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
+// Shader关键字定义这是一个shader文件
+Shader "Custom/My First Shader"
+{
+        Properties
+        {
+                _Tint("Tint", Color) = (1,1,1,1)
+        }
+
+        SubShader
+        {
+                Pass
+                {
+                        CGPROGRAM
+                        #pragma vertex MyVertexProgram
+                        #pragma fragment MyFragmentProgram
+                        #include "UnityCG.cginc"
+                        float4 _Tint;
+                        float4 MyVertexProgram(
+                                float4 position : POSITION,
+                                out float3 localPosition : TEXCOORD0
+                        ) : SV_POSITION
+                        {
+                                localPosition = position.xyz;
+                                return UnityObjectToClipPos(position);
+                        }
+                        float4 MyFragmentProgram(
+                                float4 position : SV_POSITION,
+                                float3 localPosition : TEXCOORD0
+                        ) : SV_TARGET
+                        {
+                                return float4(localPosition, 1);
+                        }
+                        ENDCG
+                }
+        }
+}
+```
+
+<br></br>
+**~~使用结构体~~**
+
+定义 Interpolators 结构体，用于储存输入到插值器的数据结构， 即 _顶点着色器的输出结构_
+
+```csharp
+struct Interpolators
+{
+  float4 positions : SV_POSITION;
+  float3 localPosition : TEXCOORD0;
+}
+```
+
+```csharp
+// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
+// Shader关键字定义这是一个shader文件
+Shader "Custom/My First Shader"
+{
+        Properties
+        {
+                _Tint("Tint", Color) = (1,1,1,1)
+        }
+
+        SubShader
+        {
+                Pass
+                {
+                        CGPROGRAM
+                        #pragma vertex MyVertexProgram
+                        #pragma fragment MyFragmentProgram
+                        #include "UnityCG.cginc"
+                        float4 _Tint;
+                        struct Interpolators
+                        {
+                          float4 position : SV_POSITION;
+                          float3 localPosition : TEXCOORD0;
+                        };
+                        Interpolators MyVertexProgram(float4 position : POSITION)
+                        {
+                                Interpolators i;
+                                i.localPosition = position.xyz;
+                                i.position = UnityObjectToClipPos(position);
+                                return i;
+                        }
+                        float4 MyFragmentProgram(Interpolators i) : SV_TARGET
+                        {
+                                return float4(i.localPosition + 0.5, 1);
+                        }
+                        ENDCG
+                }
+        }
+}
+```
+
+<LocalVideo src='/assets/TA/catlikeCoding/video1.mp4' alt='video1' />
+
+#### 纹理
+
+**~~使用 UV 坐标~~**
+
+通过 `TEXCOORD` 语义来访问纹理坐标
+
+```csharp
+// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
+
+// Shader关键字定义这是一个shader文件
+Shader "Custom/My First Shader"
+{
+	Properties
+	{
+		_Tint("Tint", Color) = (1,1,1,1)
+	}
+
+	SubShader
+	{
+		Pass
+		{
+			CGPROGRAM
+
+			#pragma vertex MyVertexProgram
+			#pragma fragment MyFragmentProgram
+			#include "UnityCG.cginc"
+
+			float4 _Tint;
+
+            struct VertexData
+            {
+                float4 position : POSITION; // object-space position
+                float2 uv : TEXCOORD0;
+            };
+
+
+			struct Interpolators
+			{
+                float4 position : SV_POSITION; // clip-space position
+                float2 uv : TEXCOORD0;
+			};
+
+			Interpolators MyVertexProgram(VertexData v)
+			{
+				Interpolators i;
+				i.position = UnityObjectToClipPos(v.position);
+                i.uv = v.uv; // UV没变，但要传入插值
+				return i;
+			}
+
+			float4 MyFragmentProgram(Interpolators i) : SV_TARGET
+			{
+				return float4(i.uv,0, 1); //可视化UV
+			}
+
+			ENDCG
+		}
+	}
+}
+```
+
+<img
+	src='/assets/TA/catlikeCoding/img6.png'
+	alt='img6'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~添加纹理~~**
+
+添加 Properties
+
+- `_MainTex("Texture", 2D) = "white"{}`
+
+添加变量
+
+- `sampler2D _MainTex;`
+
+通过 uv 采样贴图
+
+- `tex2D(_MainTex,i.uv);`
+
+<img
+	src='/assets/TA/catlikeCoding/img7.png'
+	alt='img7'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+点附近出现扭曲
+
+- 原因是球体极点附近的三角面较少，通过线性插值后的 uv 采样就出现扭曲
+
+<br></br>
+**~~Tiling 与 Offset~~**
+
+添加变量
+
+- `float4 _MainTex_ST;`
+  Tiling 与 Offset 是用于控制纹理本身的偏移和 tiling
+
+根据采样纹理的 tiling 与 offset 来处理 uv
+
+- `i.uv = v.uv * _MainTex_ST.xy + _MainTex_ST.zw;` xy 表示 tiling, zw 表示 offset
+- `i.uv = TRANSFORM_TEX(v.uv, _MainTex);` UnityCG 用于处理 tiling 和 offset 的宏
+
+```csharp
+// 顶点着色器中根据纹理tiling&offset进行uv变换
+Interpolators MyVertexProgram(VertexData v)
+{
+    Interpolators i;
+    i.position = UnityObjectToClipPos(v.position);
+    i.uv = TRANSFORM_TEX(v.uv, _MainTex);
+    return i;
+}
+```
+
+<img
+	src='/assets/TA/catlikeCoding/img8.png'
+	alt='img8'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+#### 纹理设置 **~~平铺模式~~**
+
+<br></br>
+**~~Mipmaps 与插值模式~~**
+
+_[笔记搬运中...]_
