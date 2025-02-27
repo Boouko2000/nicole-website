@@ -125,8 +125,55 @@
 	/* 深色模式下的删除线样式 */
 	.dark .prose del {
 		color: #ffffff; /* 设置深色模式下删除线文本的颜色 */
-		background-color: #363636; /* 设置深色模式下删除线文本所在行的背景颜色 */
+		background-color: #303b51; /* 设置深色模式下删除线文本所在行的背景颜色 */
 	}
+
+	.prose code {
+		background-color: #f4f4f4; /* Set background color */
+		color: hsl(0, 0%, 35%); /* Set text color */
+		padding: 0.1em 0.3em; /* Set padding */
+		border-radius: 4px; /* Set border radius */
+		font-size: 0.95em; /* Set font size */
+		font-family: 'Courier New', Courier, monospace; /* Set font */
+		text-decoration: none;
+		outline: 1px solid #e1e2e3;
+		white-space: pre-wrap; /* Ensure proper handling of line breaks */
+	}
+
+	.dark .prose code
+	{
+		background-color: #262626; /* Set background color */
+		color: hsl(0, 0%, 85%); /* Set text color */
+		outline: none;
+
+	}
+	  
+	.prose code::before, 
+	.prose code::after {
+	content: ""; /* Remove any default content like backticks */
+	}
+
+	/* Code Block Styles (inside <pre>) */
+	.prose pre code {
+		background-color: transparent; /* Set background color for code blocks */
+		padding: 1em; /* Set padding */
+		border-radius: 8px; /* Set border radius */
+		font-size: 1rem; /* Set font size */
+		font-weight: 500;
+		font-family: 'Courier New', Courier, monospace; /* Set font */
+		overflow-x: auto; /* Allow horizontal scrolling for long lines */
+		display: block; /* Ensure it takes up the full width */
+		white-space: pre; /* Wrap long lines */
+		outline: none;
+	}
+	
+	/* Dark Mode Code Block Styles */
+	.dark .prose pre code {
+		background-color: transparent; /* Dark background for code blocks */
+		color: #eaeaea; /* Lighter text color in dark mode */
+	}
+
+	
 
 
 }
