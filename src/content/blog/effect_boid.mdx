@@ -1,0 +1,268 @@
+---
+heroImage: /src/assets/images/cover_boid.png
+category: 实践记录
+description: Unity下实现基于boid算法的鱼群效果
+pubDate: 2025-02-26T16:00:00.000Z
+tags:
+  - 渲染效果
+title: Boid算法鱼群模拟
+---
+
+import LocalVideo from '../../components/LocalVideo.astro'
+
+<LocalVideo src='/assets/Effects/Boid/video1.mp4' alt='video1' />
+
+### Boid 模型介绍
+
+#### 什么是Boid模型
+
+BOID（Boid）模型是一种生物集群模型，用于模拟鸟群、鱼群等生物群体的行为。
+
+---
+
+BOID模型的核心在于通过简单的规则来驱动生物集群的整体运动，这些规则包括：
+
+- 分离 Separation
+- 同步 Alignment
+- 凝聚 Cohesion
+
+---
+
+有限的局部感知
+
+- 群体行为要求每个biod感知和响应 _其附近一定范围内的同伴_，而不是整个场景中的所有个体。
+- 局部感知的范围：
+
+<img
+	src='/assets/Effects/Boid/img1.png'
+	alt='img1'
+	style='width: 30%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+_距离_ ：以 boid 为中心，设定一个 _半径范围_，只有在这个范围内的同伴才会被考虑。
+
+_角度_ ：以 boid 的 _飞行方向为基准_，设定一个视角范围，只有在这个角度范围内的同伴才会被考虑。
+
+<br></br>
+#### Boid模型实现思路
+
+**~~分离 Separation~~**
+
+每个 boid 会与邻近的个体 _保持一定距离_ ，避免碰撞
+
+<img
+	src='/assets/Effects/Boid/img2.png'
+	alt='img2'
+	style='width: 60%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~同步 Alignment~~**
+
+每个 boid 会调整自己的方向， _使其与邻近个体的平均方向一致_
+
+<img
+	src='/assets/Effects/Boid/img3.png'
+	alt='img3'
+	style='width: 60%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~凝聚 Cohesion~~**
+
+每个 boid _会向当前本地鱼群的平均位置移动_ ，保持群体紧凑
+
+<img
+	src='/assets/Effects/Boid/img4.png'
+	alt='img4'
+	style='width: 60%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+### 具体实现
+
+**~~FishManager 脚本负责控制整体鱼群信息~~**
+
+```csharp
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class GlobalFlock : MonoBehaviour
+{
+
+    public static int tankSize = 5;
+    public GameObject fishPrefab;
+    public GameObject goalPrefab;
+    static int numFish = 10;
+    public static GameObject[]  allFish = new GameObject[numFish];
+
+    public static Vector3 goalPos = Vector3.zero;
+
+    void Start()
+    {
+        // 实例化鱼预制体并添加到allFish数组
+        for (int i = 0; i < numFish; i++)
+        {
+            // 初始化位置为在tank中的随机位置
+            Vector3 pos = new Vector3(Random.Range(-tankSize, tankSize),
+                                      Random.Range(-tankSize, tankSize),
+                                      Random.Range(-tankSize, tankSize));
+            allFish[i] = Instantiate(fishPrefab, pos, Quaternion.identity);
+        }
+    }
+
+    void Update()
+    {
+        // 随机更新goalPos
+        if (Random.Range(0, 10000) < 50)
+        {
+            goalPos = new Vector3(Random.Range(-tankSize, tankSize),
+                                  Random.Range(-tankSize, tankSize),
+                                  Random.Range(-tankSize, tankSize));
+            goalPrefab.transform.position = goalPos;
+        }
+    }
+}
+```
+
+<br></br>
+**~~2. Boid自身单独脚本~~**
+
+```csharp
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Flock : MonoBehaviour
+{
+    public float speed = 0.5f;
+    private float rotationSpeed = 1.0f;
+    private Vector3 averageHeading;
+    private Vector3 averagePosition;
+    private float neighbourDistance = 3.0f; // 在这个距离内的boid才称为neighbor
+
+    private bool turning = false;
+
+    // Start is called before the first frame update
+    void Start()
+    {
+        speed = Random.Range(0.5f, 1);
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        // 判断鱼是否游出鱼缸范围
+        if (Vector3.Distance(transform.position, Vector3.zero) >= GlobalFlock.tankSize)
+        {
+            turning = true;
+        }
+        else
+        {
+            turning = false;
+        }
+
+        if (turning)
+        {
+            // 如果鱼游出鱼缸范围，朝向中心游
+            Vector3 direction = Vector3.zero - transform.position;
+            transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(direction), rotationSpeed * Time.deltaTime);
+        }
+        else
+        {
+            // 1/5几率执行boid算法规律
+            if (Random.Range(0, 5) < 1)
+            {
+                ApplyRules();
+            }
+        }
+        transform.Translate(0,0,Time.deltaTime * speed);
+    }
+
+    void ApplyRules()
+    {
+        GameObject[] gos;
+        gos = GlobalFlock.allFish;
+
+        Vector3 vcentre = Vector3.zero; // 指向centre of the group
+        Vector3 vaoid = Vector3.zero; // 指向躲避的方向 avoidance vector
+        float gSpeed = 0.1f;
+
+        Vector3 goalPos = GlobalFlock.goalPos;　// 获取当前goalPos
+        float dist;
+        int groupSize = 0; // 当前小鱼属于的group的鱼总数
+
+        // 遍历所有鱼个体
+        foreach (GameObject go in gos)
+        {
+            if (go != this.gameObject)
+            {
+                // 计算当前鱼与鱼群中其他每条鱼的距离
+                dist = Vector3.Distance(go.transform.position, this.transform.position);
+
+                // 当前鱼与其他鱼的距离小于特定值时，被视为一个group
+                if (dist <= neighbourDistance)
+                {
+                    vcentre += go.transform.position;
+                    groupSize++;
+
+                    // Separation
+                    // 与另一条鱼距离过近时，加总到回避向量中
+                    if (dist < 1.0f)
+                    {
+                        vaoid = vaoid + (this.transform.position - go.transform.position);
+                    }
+
+                    // 获取gourp中另一条鱼的速度，加和到总group速度中
+                    Flock anotherFlock = go.GetComponent<Flock>();
+                    gSpeed += anotherFlock.speed;
+                }
+            }
+
+            if (groupSize > 0)
+            {
+                // 计算group中心方向
+                vcentre = vcentre / groupSize + (goalPos - this.transform.position);
+                // 计算平均速度
+                speed = gSpeed / groupSize;
+
+                // 回避行为
+                Vector3 direction = (vcentre + vaoid) - transform.position;
+                if (direction != Vector3.zero)
+                {
+                    transform.rotation = Quaternion.Slerp(transform.rotation,
+                                                              Quaternion.LookRotation(direction),
+                                                            rotationSpeed * Time.deltaTime);
+                }
+            }
+        }
+    }
+}
+```
+
+<LocalVideo src='/assets/Effects/Boid/video2.mp4' alt='video1' />
+
+### 相关资源
+
+Flocking Fish in Unity
+
+- https://www.bilibili.com/video/BV1Nt4y197xs/?spm_id_from=333.1391.0.0&vd_source=12155d6952f8b14a857fc371d5743944
+
+Just Boids | Useless Game Dev
+
+- https://www.youtube.com/watch?v=6dJlhv3hfQ0&t=102s
+
+Coding Adventure: Boids
+
+- https://www.bilibili.com/video/BV1VJ411y7wE/?spm_id_from=333.1391.0.0&vd_source=12155d6952f8b14a857fc371d5743944
+
+Boids
+
+- https://www.bilibili.com/video/BV1VJ411y7wE/?spm_id_from=333.1391.0.0&vd_source=12155d6952f8b14a857fc371d5743944
+
+鱼群旋风（Compute Flocking）
+
+- https://zhuanlan.zhihu.com/p/475568488
