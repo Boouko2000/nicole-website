@@ -1,0 +1,202 @@
+---
+heroImage: /src/assets/images/cover_TA_blenderAddon.png
+category: 技术美术学习
+description: Blender插件开发学习笔记
+pubDate: 2025-02-27T16:00:00.000Z
+tags:
+  - 插件与工具开发
+title: Blender 插件开发学习
+---
+
+import LocalVideo from '../../components/LocalVideo.astro'
+
+### 基础
+
+#### Blender插件开发环境搭建
+
+插件开发框
+
+- https://github.com/xzhuah/BlenderAddonPackageTool
+
+---
+
+主要操作
+
+- `main.py` 中创建插件名
+- `create.py` 创建新的插件项目
+- `test.py` 测试当前插件
+- `release.py` 打包插件
+
+<br></br>
+#### 插件的生命周期详解
+
+插件信息
+
+```python
+# Add-on info
+bl_info = {
+    "name": "Basic Add-on Sample",
+    "author": "[You name]",
+    "blender": (3, 5, 0), #最低要求的本版
+    "version": (0, 0, 1),
+    "description": "This is a template for building addons",
+    "warning": "",
+    "doc_url": "[documentation url]",
+    "tracker_url": "[contact email]",
+    "support": "COMMUNITY",
+    "category": "3D View"
+}
+```
+
+---
+
+- 安装插件：Blender会把插件解压并放在addon文件夹下，读取bl_info中的信息
+- 启用插件：Blender会读取插件的**init**.py文件，执行register方法
+- 插件启动完毕
+- 禁用插件：执行unregister方法
+- 禁用插件完毕
+- 卸载插件：删除插件文件夹（只是从磁盘上删除，不会自动删除内存中的插件代码）
+
+<br></br>
+#### Blender底层数据和数据操作方法
+
+<img
+	src='/assets/TA/BlenderAddon/img1.png'
+	alt='img1'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~1. Blender中的数据API~~**
+
+<img
+	src='/assets/TA/BlenderAddon/img2.png'
+	alt='img2'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+开启Python Tooltips之后，鼠标悬停会显示变量名称
+
+<img
+	src='/assets/TA/BlenderAddon/img3.png'
+	alt='img3'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+#### 创建一个Operator **~~1. 自定义Operator类需要继承bpy.types.Operator类~~** ```python class
+DancingOperator(bpy.types.Operator): '''ExampleAddon''' # id是唯一标识符，用于找到和调用该操作
+bl_idname = "object.dancing_ops" # 操作显示的名称 bl_label = "DancingOperator"
+
+    # 确保在操作之前备份数据，用户撤销操作时可以恢复
+    bl_options = {'REGISTER', 'UNDO'}
+
+    # 操作的前提条件，满足时才可执行
+    @classmethod
+    def poll(cls, context: bpy.types.Context):
+        return context.active_object is not None
+
+     # 具体执行的操作
+    def execute(self, context: bpy.types.Context):
+        for i in range(100):
+            bpy.context.object.rotation_euler[2] += math.pi * 2 / 100 # 旋转
+            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1) # 刷新
+            time.sleep(1/100)
+        return {'FINISHED'}
+
+````
+<LocalVideo src='/assets/TA/BlenderAddon/video1.mp4' alt='video1' />
+
+
+<br></br>
+#### 给Operator传参
+
+**~~1. 在Operator中定义属性~~**
+```python
+  # 自定义属性
+    # 属性名：数据类型
+    scale: bpy.props.FloatProperty(name="Scale", default=2; min = 0; max = 10)
+
+````
+
+```python
+   # 具体执行的操作
+    def execute(self, context: bpy.types.Context):
+        context.active_object.scale *= self.scale
+        return {'FINISHED'}
+```
+
+<LocalVideo src='/assets/TA/BlenderAddon/video2.mp4' alt='video1' />
+
+<br></br>
+**~~2. 传入与场景数据~~**
+
+在operator的 `execute()` 方法中读取场景数据
+
+<br></br>
+#### Operator的Report Invoke和Modal方法 **~~1. report~~**
+
+用于在操作过程中想展示信息给用户
+
+```python
+# 具体执行的操作
+def execute(self, context: bpy.types.Context):
+    # 展示信息
+    # @params: 信息类型， 信息
+    self.report({'INFO'}, f"Scale: {addon_prefs.number})
+    return {'FINISHED'}
+```
+
+<br></br>
+**~~2. invoke~~**
+
+用于帮助operator初始化
+
+- 先执行 `invoke()` ， 再执行 `execute()`
+- 用途：用于初始化、获取event相关信息用于后续execute使用
+
+```python
+# 重载invoke方法
+def invoke(self, context, event):
+    # 初始化参数或是执行一些在execute前的造作
+    event.mouse_x
+    ...
+    return self.execute(context)
+```
+
+<br></br>
+**~~3. modal~~**
+
+持续帧更新的操作通过 `modal()` 方法实现（类似blender原生的移动、旋转等操作）
+
+---
+
+在invoke()中配置进入modal状态
+
+```python
+def invole(self, context: bpy.types.Context, event: bpy.types.Event):
+    context.window_manager.modal_handler_add(self)
+    return {'RUNNING_MODAL'} # 返回状态
+```
+
+---
+
+`modal()` 方法逻辑
+
+- 每帧刷新都会执行
+
+```python
+def modal(self, context: bpy.types.Context, event:bpy.types.Event):
+    match event.types:
+        case 'MOUSEMOVE':
+            # 设置物体的位置到鼠标的位置方法
+        case 'LEFTMOUSE':
+            # 确定物体的位置方法
+            return {'FINISHED'}
+        case _:
+            # 维持当前状态不变
+            return {'PASS_THROUGH'}
+    return {'RUNNING_MODAL'}
+```
+
+_[笔记搬运中...]_
