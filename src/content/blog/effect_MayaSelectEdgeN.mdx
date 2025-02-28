@@ -1,0 +1,126 @@
+---
+heroImage: /src/assets/images/cover_effect_mayaSelectEdgeN.png
+category: 实践记录
+description: Maya间隔选边工具，基于PyMel
+pubDate: 2024-12-31T16:00:00.000Z
+tags:
+  - 插件与工具开发
+title: Maya 隔断选边工具
+---
+
+import LocalVideo from '../../components/LocalVideo.astro'
+
+### 需求
+
+在制作不同模型LOD时，需要对模型进行 _减面_ ，会用到 _隔断选择循环边_ 并删除以达到减面效果
+
+<img
+	src='/assets/Effects/MayaSelectEdgeN/img1.png'
+	alt='img1'
+	style='width: 90%; height: auto; display:block; margin: 0 auto;'
+/>
+
+### 工具目标
+
+实现 _隔断选边_ 功能
+
+可以自定义 _间隔的边数_
+
+选择模式支持 _Ring(环行线)_ 和 _Loop（循环线）_
+
+### 具体实现
+
+#### 通过Python脚本实现MEL语句
+
+```python
+import maya.mel as mel
+mel.eval("mel script")
+```
+
+---
+
+通过Python脚本实现MEL中的隔断选边
+
+<img
+	src='/assets/Effects/MayaSelectEdgeN/img2.png'
+	alt='img2'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+```python
+import maya.mel as mel
+
+mode = "edgeRing"
+N = 2
+mel.eval("polySelectEdgesEveryN \"{}\" {};".format(mode, N))
+```
+
+<br></br>
+#### 功能实现与UI
+
+<img
+	src='/assets/Effects/MayaSelectEdgeN/img3.png'
+	alt='img3'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+```python
+import pymel.core as pm
+import maya.mel as mel
+
+def main():
+    global radioCol
+    global intField
+    UI = pm.window(title = "Select Edges Every N")
+
+    formL = pm.formLayout()
+
+    # 选择模式
+    colLayout = pm.columnLayout(adj=True)
+    radioCol = pm.radioCollection()
+    ckBtn1 = pm.radioButton(label="Edge Loop", width=150)
+    ckBtn2 = pm.radioButton(label="Edge Ring", width=150)
+    pm.radioCollection(radioCol, e=True, sl=ckBtn1)
+
+    # 间隔边数
+    pm.setParent("..")
+    intField = pm.intField(value = 2)
+
+    # 执行按钮
+    btn = pm.button(label = "Select Edge", command=btnCMD)
+
+    # UI layout
+    pm.formLayout(
+        formL, e=True, #edit mode
+        af = [
+            (colLayout, "top", 5), (colLayout, "left", 5),
+            (btn, "left", 5), (btn, "bottom", 5), (btn, "right", 5),
+            (intField, "top", 5), (intField, "right", 5)
+        ],
+        ac = [
+            (intField, "left", 3, colLayout),
+            (btn, "top", 3, colLayout)
+        ]
+    )
+
+    pm.showWindow(UI)
+
+def btnCMD(*args):
+    # selection mode
+    radioColBtn = pm.radioCollection(radioCol, q=True, sl=True)
+    Selmode = pm.radioButton(radioColBtn, q=True, label=True)
+    if (Selmode == "Edge Loop"):
+        mode = "edgeLoop"
+    else:
+        mode = "edgeRing"
+
+    # num of edge
+    edgeNum = pm.intField(intField, q=True, value = True)
+
+    N = 2
+    mel.eval(
+        "polySelectEdgesEveryN \"{}\" {};".format(mode, edgeNum)
+    )
+```
+
+<LocalVideo src='/assets/Effects/MayaSelectEdgeN/video1.mp4' alt='video1' />

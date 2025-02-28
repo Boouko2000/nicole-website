@@ -1,0 +1,127 @@
+---
+heroImage: /src/assets/images/cover_effect_mayaIndividualExport.png
+category: 实践记录
+description: Maya 批量单独导出fbx模型工具，基于PyMel
+pubDate: 2025-01-14T16:00:00.000Z
+tags:
+  - 插件与工具开发
+title: Maya 批量单独导出工具
+---
+
+import LocalVideo from '../../components/LocalVideo.astro'
+
+### 需求
+
+工程中有多个模型需要单独导出成多个 `fbx` 文件
+
+### 工具目标
+
+将工程中所选模型 _批量导出成单独的fbx文件_
+
+每个fbx文件命名与工程中模型 _命名一致_
+
+导出窗口可以对模型 _重命名_
+
+导出后 _打开保存路径窗口_
+
+### 具体实现
+
+#### 基础功能实现
+
+```python
+import pymel.core as pm
+
+def main():
+    selList = pm.ls(sl = True)
+
+    # 弹出错误窗口
+    if not selList:
+        pm.PopupError("请选中需要导出的模型")
+        return
+
+    # 选择保存路径
+    savePath = pm.fileDialog2(fileFilter="*.folder", fileMode=2)[0]
+
+    # 遍历选中的模型并导出到指定路径
+    for s in selList:
+        pm.select(s)
+        filePath = savePath + "/" + s.name() + ".fbx"
+        pm.exportSelected(filePath, force = True)
+```
+
+<br></br>
+#### 合并UI ```python import pymel.core as pm import os
+
+selList = None
+
+def main():
+global selList
+selList = pm.ls(sl = True)
+
+    if not selList:
+        pm.PopupError("请选中需要导出的模型")
+        return
+
+    # 检查并删除已有窗口
+    if pm.window("ExportWindow", exists=True):
+        pm.deleteUI("ExportWindow", window=True)
+
+    # UI
+    UI = pm.window("ExportWindow", title = "Export Individual Selected Models", h = 100)
+    formLay = pm.formLayout()
+    pText = pm.text(label="Path:")
+    pTextField = pm.textField("pathTextField")
+    exportBtn = pm.button(label="Export", command=exportCMD)
+    fileDialogueBtn = pm.button(label="...", command=selectPath)
+
+    scrollLayout = pm.scrollLayout(w=300, h= 100)
+    for s in selList:
+        pm.nameField(o=s, w= 280)
+
+    pm.formLayout(
+        formLay,
+        e = True,
+        af = [
+            (scrollLayout, "top", 5), (scrollLayout, "left", 5),
+            (exportBtn, "top", 5), (exportBtn, "right", 5),
+            (pText, "left", 5), (pText, "bottom", 5),
+            (pTextField, "bottom", 5),
+            (fileDialogueBtn, "bottom", 5), (fileDialogueBtn, "right", 5)
+        ],
+        ac = [
+            (pTextField, "left", 3, pText), (pTextField, "right", 3,fileDialogueBtn),
+            (exportBtn, "left", 3, scrollLayout), (exportBtn, "bottom", 3, scrollLayout),
+            (scrollLayout, "bottom", 3, pTextField)
+        ]
+    )
+
+    pm.window(UI, e=True, w=400, h=100)
+    pm.showWindow(UI)
+
+def exportCMD(\*args):
+savePath = pm.textField("pathTextField", q=True, text=True)
+print(savePath)
+
+    # 遍历选中的模型并导出到指定路径
+    msg = "Exported: \n"
+    for s in selList:
+        pm.select(s)
+        filePath = savePath + "/" + s.name() + ".fbx"
+        msg += s.name() + "\n"
+        pm.exportSelected(filePath, force = True)
+    pm.select(selList)
+
+    # 导出完成后是否打开保存路径
+    choice = pm.confirmDialog(title="Export successfully", message=msg, button=["Dismiss", "Open Folder"])
+    if (choice != "dismiss"):
+        os.startfile(savePath)
+
+def selectPath(_args):
+savePath = pm.fileDialog2(fileFilter="_.folder", fileMode=2)[0]
+pm.textField("pathTextField", e=True, text=savePath)
+
+```
+
+<LocalVideo src='/assets/Effects/MayaIndividualExport/video1.mp4' alt='video1' />
+
+```

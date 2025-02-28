@@ -1,0 +1,89 @@
+---
+heroImage: /src/assets/images/cover_effect_mayaCombine.png
+category: 实践记录
+description: 优化Maya内置Combine工具，基于PyMel
+pubDate: 2024-12-31T16:00:00.000Z
+tags:
+  - 插件与工具开发
+title: Maya 优化结合工具
+---
+
+import LocalVideo from '../../components/LocalVideo.astro'
+
+### Maya中的结合（Combine）的问题
+
+Maya中combine mesh后会 _出现一些不需要的空组_ ，需要通过 _手动清除历史记录_ 删除掉
+
+- Combine 前
+
+<img
+	src='/assets/Effects/MayaCombineTool/img1.png'
+	alt='img1'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- Combine 后
+
+<img
+	src='/assets/Effects/MayaCombineTool/img2.png'
+	alt='img2'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+combine后的mesh命名会根据第一个选择的物体进行拓展后缀命名，但框选物体并combine的情况下会不知道第一个选择到的是什么物体，从而导致需要在combine后 _重命名mesh_
+
+---
+
+当combine几个在同一组里的mesh时， _combine后的mesh出现在组外_
+
+<img
+	src='/assets/Effects/MayaCombineTool/img3.png'
+	alt='img3'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+<br></br>
+<img
+	src='/assets/Effects/MayaCombineTool/img4.png'
+	alt='img4'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+### 工具目标
+
+combine后自动清除历史记录， _删除无关空组_
+
+combine后以 _最后选择的物体名称_ 为新mesh的命名
+
+combine后 _保持原层级关系_
+
+### 具体实现
+
+```python
+import pymel.core as pm
+
+selList = pm.ls(sl = True) # 获取当前所有选择的物体
+lastSel = selList[-1] # 获取所选物体中的最后一个
+p = lastSel.getParent() # 获取最后一个物体所在组
+a = pm.polyUnite(selList)[0] # combine所选物体
+a.setParent(p) # 将combine后的物体恢复到原组
+pm.delete(a, ch=True) # 清除历史记录，删除无关组
+a.rename(lastSel) # 以最后选择的物体为combine后的物体命名
+```
+
+- Combine 前
+
+<img
+	src='/assets/Effects/MayaCombineTool/img5.png'
+	alt='img5'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- Combine 后
+
+<img
+	src='/assets/Effects/MayaCombineTool/img6.png'
+	alt='img6'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
