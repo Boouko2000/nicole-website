@@ -1,0 +1,181 @@
+---
+heroImage: /src/assets/images/cover_TA_Shader.png
+category: 技术美术学习
+description: 技术美术渲染基础与Unity着色语言学习
+pubDate: 2025-02-25T16:00:00.000Z
+tags:
+  - Shader语言与渲染基础
+title: Unity 引擎与技术美术理论
+---
+
+_[笔记正在搬运中...]_
+
+原网址： https://l186weha4kz.feishu.cn/wiki/EuPpwBhGHiAWupkN2sLc3BLmnnb
+
+### 学习笔记
+
+#### Unity 光照系统
+
+**~~1. LightMapping 理论~~**
+
+**游戏中光照渲染的类型**
+
+实时光
+
+- 原理：作用于每一个灯光范围内的模型顶点（逐顶点、逐像素光照）
+- 优点 灯光位置、强度、颜色会发生移动
+- 缺点 消耗大，不支持光线追踪
+
+烘焙光
+
+- 原理：将光线在场景中多次反射的结果计算在一张光照贴图上
+- 优点 光纤的模拟效果真实 / 开销比实时光小
+- 缺点 不能应用于实时移动的光源与物体
+
+实际开发中一般是两种光线效果并用
+
+- 对于动态光源/动态物体，采用实时光
+- 对于静态光源/静态物体，采用烘焙光
+
+---
+
+**光线的六种特性**
+
+物理世界中光纤的六种特性
+
+- 反射 Reflection
+  - 漫反射：粗糙微表面
+  - 镜面反射：光滑微表面
+- 透射 Transmission
+- 散射 Scattering
+- 折射 Refraction
+- 衍射 Diffraction
+- 吸收 Absorption
+
+<img
+	src='/assets/TA/Shader/img1.png'
+	alt='img1'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+**全局光照**
+
+介绍
+
+- 全局光照纳入了光线的多次反射计算考虑，可以模拟出非常真实的环境光照
+- 全局光照可以通过 _烘焙光_ 实现
+
+Unity 中提供了两种不同的技术来预先计算全局光照和反射光照：
+
+- _预计算全局光照 GI - Baked Global Illumination_
+  - 作用在静态物体上
+- _实时全局光照 -Realtime Global Illumination_
+  - 作用在动态物体上
+
+Unity 中实时全局光照的解决方案
+
+- Unity Enlighten 光照系统 （Deprecated）
+- _Progressive Light Mapping (CPU/GPU)_
+
+<br></br>
+**~~2. Baked GI 实战~~**
+
+**场景搭建与材质设置**
+
+场景搭建
+
+- 确保场景中的参与烘焙光照计算的物体和灯光勾选 `static`
+
+---
+
+自发光材质
+
+- 赋予充当灯光的物体一个自发光材质（Emission HDR color : >1）
+- Windows - Renering - Lighting - Generate Lighting
+
+---
+
+Lightmap UV
+
+- 如果没有特别额外制作 LightmapUV，需要在 mesh 的面板中勾选 `Generate Lightmap UVs`
+
+<details>
+	<summary> 👉 Lightmap UV 介绍</summary>
+	Lightmap UV 是一种特殊的 UV
+	坐标集。它专门用于存储光照信息（如间接光、阴影等）的纹理映射。当进行光照烘焙（如在游戏开发或 3D
+	渲染中）时，渲染器会根据场景中的光照条件计算每个表面接收的光照量，并将这些信息存储在一个纹理（lightmap）中
+	普通 UV
+	的布局主要考虑如何最好地展示模型的纹理细节，可能会根据模型的形状和纹理图案进行优化；lightmap UV
+	的布局更关注光照信息的准确性和均匀性，需要确保光照纹理能够正确地覆盖模型表面，避免光照泄漏或不均匀的情况。
+</details>
+
+---
+
+烘焙文件
+
+<img
+	src='/assets/TA/Shader/img2.png'
+	alt='img2'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- 烘焙结束后会在与场景同级的目录下生成以下几个文件
+
+<img
+	src='/assets/TA/Shader/img3.png'
+	alt='img3'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+**效果进阶**
+
+渲染瑕疵修复
+
+- 当模型处于两盏灯光的 _交界处_ 时，可能会出现 _接缝明显_ 的情况
+  - Model - Inspector - stitch seam
+- 当场景中的烘焙渲染 _精度太低_ ，模型表面可能会出现 _光斑_
+  - Lighting - 增加 lightmap resolution 和 lightmap padding
+
+<img
+	src='/assets/TA/Shader/img4.png'
+	alt='img4'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+AO 的开启
+
+- Lighting - Lightingmapping settings - Ambient Occlusion ✔
+
+<img
+	src='/assets/TA/Shader/img5.png'
+	alt='img5'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+Bloom 泛光效果
+
+- _Post Processing_ 插件（package）
+- 确保渲染的颜色空间在 _线性空间_
+  - Project settings -Player - Other settings - Color space - Linear
+- 在摄像机上添加 P*ost Process Layer* 组件
+- 在场景中添加 _Post Process Volume_ 物体
+  - 在 "Post Process Volume" 组件中，勾选 "Is Global" 选项
+  - 点击 "New" 按钮，创建一个新的 "Profile" （后处理预设文件）
+- 在 _Post process volume profile_ 中添加各种后处理效果（辉光、暗角等）
+- 新建一个 _post process layer_ ，并将 post process volume 设定到这个层。在摄像机中选择后处理的 mask 为 post process 这个层
+
+<img
+	src='/assets/TA/Shader/img6.png'
+	alt='img6'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+### 相关资源
