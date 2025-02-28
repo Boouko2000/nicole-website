@@ -1,0 +1,214 @@
+---
+heroImage: /src/assets/images/cover_CS_DataLearning.png
+category: 计算机学习
+description: MCIT Java 数据结构与算法学习笔记
+pubDate: 2025-02-25T16:00:00.000Z
+tags:
+  - 数据结构与算法
+title: Java Data Structure & Software Design
+---
+
+_[笔记正在搬运中...]_
+
+原网址： https://l186weha4kz.feishu.cn/wiki/Gzvmw6Dm3iRwOlkEyXPcM2oynLL
+
+### Analyzing Data Structures
+
+#### Classification of Data Structure
+
+<img
+	src='/assets/CS/DataLearning/img1.jpg'
+	alt='img1'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+#### Big O Notation
+
+**~~What is Big-O Notation~~**
+
+Algorithmn's time complexity
+
+- Constant complexity: O(1) 时间复杂度恒定
+- Linear complexity: O(n) 时间复杂度与数据量呈线性关系 (n : amount of data)
+
+<br></br>
+**~~Asymptotic Notations~~**
+
+$$ f(n) ∈ O(g(n))$$ 表示 $$g(n)$$ 是 $$f(n)$$ 的渐进上限
+
+<img
+	src='/assets/CS/DataLearning/img2.png'
+	alt='img2'
+	style='width: 20%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+<img
+	src='/assets/CS/DataLearning/img3.png'
+	alt='img3'
+	style='width: 80%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+**Asymptotic Notation**
+
+<img
+	src='/assets/CS/DataLearning/img4.png'
+	alt='img4'
+	style='width: 80%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~Calculate Big-O~~**
+
+**Example 1**
+
+- For Big-Oh complexity, only care about the term raise the highest power
+
+<img
+	src='/assets/CS/DataLearning/img5.png'
+	alt='img5'
+	style='width: 80%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+**Example 2**
+
+<img
+	src='/assets/CS/DataLearning/img6.png'
+	alt='img6'
+	style='width: 80%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~Amortized Big-Oh Complexity~~**
+
+**Amortized Analysis**
+
+- 另一种分析方法，考虑cost of time而不是worse case scenario
+- 对于少数情况需要进入if statement从而改变整个function 的complexity时， Big-Oh如何计算
+- Determine an algorithmn's Big-Oh complexity by accounting for its _cost over time_
+- Instead of considering the worst-case complexity of a single operation, _consider the cost of n operations_
+
+<img
+	src='/assets/CS/DataLearning/img7.png'
+	alt='img7'
+	style='width: 80%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~How to Compare Data Structures~~**
+
+ArrayList
+
+- Get element by index directly
+
+---
+
+LinkedList
+
+- Setting head as current node, then iterate until finding the element at specific location
+
+---
+
+Data Structure Complexity
+
+- Consider the number of operations that is required to perform an algorithmn
+  - _Constant Complexity_ : the number of operations is independent of the number of element (the size of the data structure)
+  - _Linear Complexity_ : the number of operations is linearly proportional to the number of elements
+- Consider what happen to the number of operation if you double the input size
+
+---
+
+<img
+	src='/assets/CS/DataLearning/img8.png'
+	alt='img8'
+	style='width: 80%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<img
+	src='/assets/CS/DataLearning/img9.png'
+	alt='img9'
+	style='width: 80%; height: auto; display:block; margin: 0 auto;'
+/>
+
+### List - ArrayList
+
+#### ArrayList 的特征
+
+Manipulation with ArrayList is slow because it internally uses and array. 在删减元素时，其他元素会需要进行 shift 操作
+
+Better for storing and accessing data
+
+存储 ArrayList 的内存位置是连续的
+
+<br></br>
+#### Limitations of ArrayList
+
+The underlying array has fixed capacity
+
+time consuming for capacity incresement
+
+Cannot easily insert a value between two others
+
+Searching for a value can be very slow （查找是否存在某个元素）
+
+### List - LinkedList
+
+#### LinkedList 的特征
+
+- Manipulation with LinkedList is faster than ArrayList. No bit shifting is required.
+- LinkedList can act as a list and queue both because it implements List and Deque inetrfaces
+- LinkedList is better for manipulating
+- The first node of the linked list is called the Head.
+- The next pointer of the last node always points to NULL.
+- In a linked list, insertion and deletion are possible easily.
+- Linked lists can shrink or grow at any point in time easily.
+
+<br></br>
+#### LinkedList 的特征 *ArrayList* : store data in adjacent memory space - continuously stored
+
+- LinkedList\* : store data in memory space arbitarily but linked in some way.
+  - Additional piece of information indicating the sequence (used to link elements together)
+
+<img
+	src='/assets/CS/DataLearning/img10.png'
+	alt='img10'
+	style='width: 80%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- By indicating the last node is the end of the collection, show it linked to null, the first node is called 'head', the last node is called 'tail'.
+
+<img
+	src='/assets/CS/DataLearning/img11.png'
+	alt='img11'
+	style='width: 80%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+Implementation of LinkedList in Java
+
+```Java
+public class LinkedList <E>{    // Declare Generic LinkedList class
+    // Declare Node class
+    class Node {
+        E value; // data stored in the node
+        Node next; // Node object indicating the reference to the next Node in the linkedList
+        // Node constructor
+        Node(E value){
+            this.value = value;
+        }
+    }
+    // head and tail are initialized to null
+    protected Node head = null;
+    protected Node tail = null;
+    /**
+    Other methods on manipulation of LinkedList
+    **/
+}
+```
