@@ -1,0 +1,559 @@
+---
+heroImage: /src/assets/images/cover_effect_URPPost.png
+category: 实践记录
+description: 优化Unity中URP管线下用户自定义后处理效果组件的步骤
+pubDate: 2025-03-01T16:00:00.000Z
+tags:
+  - 插件与工具开发
+title: 优化URP自定义后处理系统
+---
+
+### 原生URP自定义后处理效果的问题
+
+#### URP中的内置后处理逻辑
+
+URP中不同于BuildIn管线，URP需要自定义RenderFeature来实现一个个后处理
+
+<br></br>
+
+**~~剖析URP Render Feature~~**
+
+Create / Rendering / URP Renderer Feature
+
+CustomRenderPassFeature脚本
+
+- `CustomRenderPassFeature` 继承于 `ScriptableRendererFeature` 类
+  其中又定义了一个继承 `ScriptableRenderPass` 的 `CustomRenderPass` 类
+- `ScriptableRenderPass` 定义了这个pass中的渲染逻辑，也是核心后处理逻辑所在的部分
+
+```csharp
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+
+public class CustomRenderPassFeature : ScriptableRendererFeature
+{
+    class CustomRenderPass : ScriptableRenderPass
+    {
+        public override void OnCameraSetup(CommandBuffer cmd, ref RenderingData renderingData)
+        {}
+
+        public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
+        {}
+
+        public override void OnCameraCleanup(CommandBuffer cmd)
+        {}
+    }
+    CustomRenderPass m_ScriptablePass;
+    public override void Create()
+    {
+        m_ScriptablePass = new CustomRenderPass();
+        m_ScriptablePass.renderPassEvent = RenderPassEvent.AfterRenderingOpaques;
+    }
+
+    public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
+    {
+        renderer.EnqueuePass(m_ScriptablePass);
+    }
+}
+```
+
+<br></br>
+#### 问题定义
+
+对于自定的后处理效果，需要自定义 _多个RenderFeature_ 来一个个实现后处理，而不能向URP内置的后处理一样通过 _一个RenderPass_ 处理完所有后处理组件
+
+### 工具目标
+
+#### 自定义后处理系统的目标
+
+1. 只需要在在URP renderer中添加 _一次_ 后处理的RenderFeature脚本
+
+2. 在RenderFeature脚本中插入 _自定义的后处理RenderPass_ , 该RenderPass
+   会 _遍历所有的后处理效果_ ，根据效果的启用与否来决定是否在render序列中添加该效果
+
+3. 自定义 _Volume组件_ ，可以在Volume组件中调整后处理的参数/效果
+
+### 具体实现
+
+#### 脚本创建
+
+分别创建RenderFeature, RenderPass和Volume脚本：
+
+- `CustomPostProcessRenderFeature`
+- `CustomPostProcessRenderPass`
+- `CustomPostProcessVolume`
+
+<br></br>
+
+#### RenderFeature脚本解析
+
+**~~CustomPostProcessRenderFeature~~**
+
+这是一个渲染特性（Render Feature），用于将自定义的后处理逻辑插入到URP的渲染流程中。
+
+它负责创建和管理 `CustomPostProcessRenderPass` _实例_ ，并决定在渲染管线的哪个阶段执行这些Pass。
+
+可以通过 ScriptableRendererFeature 来扩展URP的渲染管线，添加自定义的后处理步骤。
+
+<br></br>
+**~~重点步骤~~**
+
+1. _实例化Render pass_
+2. 定义渲染在URP渲染管线中的 _什么阶段_ 执行当前 render pass
+3. 将RenderPass添加到摄像机的 _render序列_ 中
+
+<br></br>
+**~~代码~~**
+
+```csharp
+using UnityEngine;
+using UnityEngine.Rendering.Universal;
+
+// 规定Render Feature只能添加一次
+[DisallowMultipleRendererFeature]
+public class CustomPostProcessRenderFeature : ScriptableRendererFeature
+{
+    CustomPostProcessRenderPass m_renderPass;
+
+    // 定义渲染在URP渲染管线中的什么阶段执行当前后处理pass
+    [SerializeField]
+    private RenderPassEvent m_passRenderEvent = RenderPassEvent.BeforeRenderingPostProcessing;
+
+    // 实例化RenderPass并设置了RenderPass插入的渲染事件
+    public override void Create()
+    {
+        m_renderPass = new CustomPostProcessRenderPass();
+        m_renderPass.renderPassEvent = m_passRenderEvent;
+    }
+
+    // 将RenderPass添加到摄像机的render序列中
+    // 在每一帧渲染时，URP会调用这个方法，以确定是否需要将自定义的渲染Pass加入到渲染队列中
+    public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
+    {
+        // 在开启了后处理效果的Game摄像机的渲染队列中添加pass
+        if (renderingData.cameraData.cameraType == CameraType.Game && renderingData.cameraData.postProcessEnabled)
+        {
+            renderer.EnqueuePass(m_renderPass);
+        }
+    }
+}
+```
+
+<br></br>
+#### Volumn脚本解析
+
+**~~CustomPostProcessVolume~~**
+
+这是一个Volume组件，用于在场景中控制后处理效果的参数。
+
+允许通过Volume系统来调整后处理效果的强度、颜色等参数，并且可以根据摄像机的距离或区域来混合不同的效果。
+
+<br></br>
+**~~重点步骤~~**
+
+1. 根据后处理shader路径 _实例化材质球_
+2. 定义当前后处理效果与其他后处理效果的 _相对渲染顺序_
+3. 将volume组件中的自定义参数传到material中以 _修改材质属性_
+4. _释放临时资源_
+
+<br></br>
+**~~代码~~**
+
+```csharp
+using System;
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+public abstract class CustomPostProcessVolume : VolumeComponent, IPostProcessComponent
+{
+    // 定义后处理材质球
+    private Material material;
+
+    // 后处理shader的路径
+    public abstract string shaderPath { get; }
+
+    // 定义material变量的创建与获取(getter)，动态根据shader路径创建材质
+    public Material m_material
+    {
+        get
+        {
+            if (Shader.Find(shaderPath) == null)
+            {
+#if UNITY_EDITOR
+                Debug.LogError($"Shader at path '{shaderPath}' doesn't exist or there are some errors in the Shader ! ");
+#endif
+                return null;
+            }
+            else
+            {
+                // 根据shader路径创建材质球并返回
+                if (material == null)
+                    material = CoreUtils.CreateEngineMaterial(shaderPath);
+                return material;
+            }
+        }
+    }
+
+    // 定义了当前后处理效果的渲染顺序
+    public virtual int orderInPass => 0;
+
+    // IPostProcessComponent的抽象方法的实现
+    public abstract bool IsActive(); //继承的子类必须实现此方法
+    public virtual bool IsTileCompatible() => false; //继承的子类不一定实现此方法
+
+    // 【核心抽象方法】
+    // material材质属性改变时被调用
+    // @renderingData: 接收Camera的RenderingData，可以获取摄像机相关参数
+    public abstract void SetMaterialProperty(RenderingData renderingData, RenderTexture src, RenderTexture des, int passNum = 0);
+
+    // 可在子类中选择实现
+    // 用于释放子类中创建的其他临时资源
+    protected virtual void Dispose(bool disposing) { }
+
+    // 释放创建的材质球资源内存
+    public void Dispose()
+    {
+        CoreUtils.Destroy(material);
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected override void OnDestroy()
+    {
+        Dispose();
+        base.OnDestroy();
+    }
+
+}
+```
+
+<br></br>
+#### RenderPass脚本解析
+
+**~~CustomPostProcessRenderPass~~**
+
+这是一个渲染Pass， _负责具体的后处理渲染操作。_
+
+它定义了如何执行后处理效果，比如使用特定的材质和渲染目标。
+
+在 `CustomPostProcessRenderFeature` 中创建的 `CustomPostProcessRenderPass` 实例会在渲染管线的特定阶段执行
+
+<br></br>
+**~~重点步骤~~**
+
+CustomPostProcessRenderPass中通过三个函数分别实现 _初始化后处理组件Lists_ 、_后处理组件的渲染逻辑处理_ 、*资源释放*这三个步骤
+
+---
+
+1. 在 `OnCameraSetup()` 中获取active后处理组件并定义RT的配置
+2. 在 `Execute()` 中 _遍历所有active的后处理组件_ ，_设置材质Property_ ，并通过 _`Blit()`_ 调用后处理材质来处理渲染逻辑、渲染到RT上
+3. 在 `Dispose()` 中 _释放资源_
+
+<br></br>
+**~~代码~~**
+```csharp
+using System.Linq;
+using System.Collections.Generic;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+ 
+public class CustomPostProcessRenderPass : ScriptableRenderPass
+{
+    // 声明临时RT
+    RTHandle mTemp0;
+    RTHandle mTemp1;
+    // 开启了的Volume组件
+    List<CustomPostProcessVolume> active_components = new List<CustomPostProcessVolume>(); 
+    // 所有自定义的Volume组件
+    List<CustomPostProcessVolume> components; 
+ 
+    
+    // 初始化：获取active后处理组件并定义RT配置
+    public override void OnCameraSetup(CommandBuffer cmd, ref RenderingData renderingData)
+    {
+        // 1. 获取自定义的CustomPostProcessVolume组件 -----------------
+        // Unity Volume系统的堆栈，用于管理场景中所有的Volume组件
+        var stack = VolumeManager.instance.stack;
+        
+        // 获取到所有继承了CustomePostProcessVolume基类的子类Volume组件
+        // 并根据Volume的orderInPass排序存储到components List中
+        components = VolumeManager.instance.baseComponentTypeArray
+           .Where(t => t.IsSubclassOf(typeof(CustomPostProcessVolume)) && stack.GetComponent(t) != null)
+           .Select(t => stack.GetComponent(t) as CustomPostProcessVolume).OrderBy(t => t.orderInPass)
+           .ToList();
+        
+        // 没有自定义后处理Volume的情况
+        if (components == null)
+            return;
+        if (components.Count == 0)
+            return;
+        active_components.Clear();
+ 
+        
+        // 2. 筛选激活的组件 -----------------
+        // 检查当前components中的组件是否被开启，是的话添加到active_component List中
+        foreach (var item in components)
+        {
+            if (item.IsActive() && item.m_material != null)
+                active_components.Add(item);
+        }
+        if (active_components.Count == 0)
+            return;
+ 
+        // 3. 设置渲染目标的Descriptor -----------
+        // TargetDescriptor 描述了渲染纹理的各种属性如分辨率、颜色格式、MSAA等
+        var descriptor = renderingData.cameraData.cameraTargetDescriptor;
+        descriptor.msaaSamples = 1; // 禁用MSAA
+        descriptor.depthBufferBits = 0; // 不保留深度信息
+        
+        
+        // 4. 分配临时渲染纹理 -----------
+        // 决定是否需要分配两个RT
+        RenderingUtils.ReAllocateIfNeeded(ref mTemp0, descriptor, name: "mTempRT0");
+        // 如果只有一个开启的后处理组件，且该shader由多个pass，则需要分配mTemp1
+        if (active_components.Count == 1)
+        {
+            if (active_components[0].m_material.shader.passCount > 1)
+                RenderingUtils.ReAllocateIfNeeded(ref mTemp1, descriptor, name: "mTempRT1");
+        }
+        // 如果由多个开启的后处理组件，也需要分配mTemp1
+        else if (active_components.Count > 1)
+            RenderingUtils.ReAllocateIfNeeded(ref mTemp1, descriptor, name: "mTempRT1");
+    }
+    
+    // 渲染逻辑处理
+    public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
+    {
+        // 在由active组件的条件下进行渲染逻辑处理
+        if (active_components != null && active_components.Count > 0)
+        {
+            // 1. 在FrameDebugger里看到我们的自定义后效Pass
+            var cmd = CommandBufferPool.Get("CustomPostProcessRenderPass");
+            context.ExecuteCommandBuffer(cmd);
+            cmd.Clear();
+ 
+            
+            // 
+            for (int i = 0; i < active_components.Count; i++)
+            {
+                if (active_components[i].m_material == null)
+                    continue;
+                
+                // 单独处理第一个后处理组件，将进行后处理前的图像渲染到RT0
+                if (i == 0)
+                {
+                    var passCount = active_components[0].m_material.shader.passCount;
+                    
+                    // 根据第一个后处理组件所使用的shader中的pass数量来渲染图像到RT0/RT1
+                    if (passCount == 1)
+                    {
+                        using (new ProfilingScope(cmd, new ProfilingSampler(active_components[0].ToString())))
+                        {
+                            active_components[0].SetMaterialProperty(renderingData, renderingData.cameraData.renderer.cameraColorTargetHandle, mTemp0, 0);
+                            cmd.Blit(renderingData.cameraData.renderer.cameraColorTargetHandle, mTemp0, active_components[0].m_material, 0);
+                        }
+                    }
+                    else
+                    {
+                        for (int passNum = 0; passNum < passCount; passNum++)
+                        {
+                            using (new ProfilingScope(cmd, new ProfilingSampler(active_components[0].ToString())))
+                            {
+                                if (passNum == 0)
+                                {
+                                    active_components[0].SetMaterialProperty(renderingData, renderingData.cameraData.renderer.cameraColorTargetHandle, mTemp0, passNum);
+                                    cmd.Blit(renderingData.cameraData.renderer.cameraColorTargetHandle, mTemp0, active_components[0].m_material, passNum);
+                                }
+                                else
+                                {
+                                    active_components[0].SetMaterialProperty(renderingData, mTemp0, mTemp1, passNum);
+                                    cmd.Blit(mTemp0, mTemp1, active_components[0].m_material, passNum);
+                                    CoreUtils.Swap(ref mTemp0, ref mTemp1);
+                                }
+                            }
+                        }
+                    }
+ 
+                }
+                // 其余active后处理组件
+                else
+                {
+                    var passCount = active_components[i].m_material.shader.passCount;
+                    for (int passNum = 0; passNum < passCount; passNum++)
+                    {
+                        using (new ProfilingScope(cmd, new ProfilingSampler(active_components[i].ToString())))
+                        {
+                            active_components[i].SetMaterialProperty(renderingData, mTemp0, mTemp1, passNum);
+                            cmd.Blit(mTemp0, mTemp1, active_components[i].m_material, passNum);
+                            CoreUtils.Swap(ref mTemp0, ref mTemp1);
+                        }
+                    }
+                }
+            }
+            
+            // 最后经过所有后处理的图像渲染到RT0
+            cmd.Blit(mTemp0, renderingData.cameraData.renderer.cameraColorTargetHandle);
+            context.ExecuteCommandBuffer(cmd);
+            cmd.Clear();
+            CommandBufferPool.Release(cmd);
+        }
+ 
+    }
+ 
+    // 释放资源
+    public void Dispose()
+    {
+        // 释放RT
+        mTemp0?.Release();
+        mTemp1?.Release();
+        
+        // 释放后处理组件
+        if (components != null)
+        {
+            foreach (var item in components)
+            {
+                item.Dispose();
+            }
+            components.Clear();
+        }
+        active_components?.Clear();
+    }
+}
+```
+
+### 工具测试
+
+#### 创建后处理Shader
+
+使用一个简单的反色shader
+
+```csharp
+Shader "Custom/URPShaderTemplate"
+{
+    Properties
+    {
+        _MainTex ("Main Tex", 2D) = "white" {}
+    }
+
+    SubShader
+    {
+        Tags { "RenderType"="Opaque" "RenderPipeline"="UniversalRenderPipeline" }
+
+        Pass
+        {
+            Tags { "LightMode"="UniversalForward" }
+
+            HLSLPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Input.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+
+            TEXTURE2D(_MainTex);
+            SAMPLER(sampler_MainTex);
+
+            CBUFFER_START(UnityPerMaterial)
+            float4 _MainTex_ST;
+            CBUFFER_END
+
+            struct Attributes
+            {
+                float4 positionOS : POSITION;
+                float2 uv : TEXCOORD0;
+            };
+
+            struct Varyings
+            {
+                float4 positionHCS : SV_POSITION;
+                float2 uv : TEXCOORD0;
+            };
+
+            Varyings vert(Attributes IN)
+            {
+                Varyings OUT;
+                OUT.positionHCS = TransformObjectToHClip(IN.positionOS.xyz);
+                OUT.uv = TRANSFORM_TEX(IN.uv, _MainTex);
+                return OUT;
+            }
+
+            half4 frag(Varyings IN) : SV_Target
+            {
+                half4 color = 1 - SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, IN.uv);
+                return color;
+            }
+            ENDHLSL
+        }
+    }
+}
+```
+
+<br></br>
+#### 创建后处理Volume脚本
+
+1. 自定义的后处理组件需要继承 `CustomPostProcessVolumn`
+2. 添加shader路径
+3. 重载 `IsActive()` 方法来定义开启该后处理组件的条件
+4. 重载 `SetMaterialProperty()` 方法来设置shader中的属性
+
+```csharp
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+
+[System.Serializable]
+[VolumeComponentMenuForRenderPipeline("Custom/InvertEffect", typeof(UniversalRenderPipeline))]
+public class InvertEffect : CustomPostProcessVolume
+{
+    public override string shaderPath => "Custom/URPShaderTemplate"; // shader路径
+    public ColorParameter baseColor = new ColorParameter(Color.white, false, true, true);
+
+    public override bool IsActive()
+    {
+        return true;
+    }
+
+    public override void SetMaterialProperty(RenderingData renderingData, RenderTexture src, RenderTexture des, int passNum = 0)
+    {
+        m_material.SetTexture("_MainTex", src);
+    }
+}
+```
+
+<br></br>
+
+#### 使用后处理组件
+
+1. 在URP Renderer中添加一次CustomRenderPassFeature
+2. 新建后处理shader脚本
+3. 新建后处理volume脚本
+4. 新建Global Volume Game Object
+5. 在Global Volume中添加Override并选择自定义后处理效果
+
+<br></br>
+
+#### 测试效果
+
+反色后处理shader效果
+
+<img
+	src='/assets/Effects/URPPost/img1.png'
+	alt='img1'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+之后再需要添加其他的后处理效果，只需要新建后处理shader以及后处理volume组件即可，不需要额外添加RenderFeature
+
+### 相关资源
+
+Unity URP14.0 自定义后处理系统
+
+- https://zhuanlan.zhihu.com/p/621840900
+
+Unity URP自定义后处理系统
+
+- https://blog.csdn.net/m0_68267247/article/details/143731575
