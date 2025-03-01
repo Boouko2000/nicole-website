@@ -1,0 +1,101 @@
+---
+heroImage: /src/assets/images/cover_effect_perlinNoise.png
+category: 实践记录
+description: 在Unity中实现无缝2D、3D柏林噪声纹理生成
+pubDate: 2025-02-25T16:00:00.000Z
+tags:
+  - 插件与工具开发
+title: Unity中2D、3D Perlin Noise 生成
+---
+
+### Perlin Noise 介绍
+
+#### Perlin Noise 是什么
+
+柏林噪声是自然、连续的随机图案，是*平滑、连续且可控的随机数*
+
+---
+
+核心特点：
+
+- 平滑性：柏林噪声生成的数值在空间中是*平滑过渡*的，没有明显的突变。
+- 连续性：噪声函数在任意点都是*连续*的，适合生成无缝纹理。
+- 可控性：通过调整*频率、振幅和叠加*（分形噪声），可以生成*不同细节程度*的图案。
+- 随机性：虽然是伪随机，但看起来非常*自然*。
+
+<br></br>
+### Perlin Noise 算法原理 #### 网格划分 **~~1. 将空间以整数的坐标为界划分为各个分区~~**
+
+一维的空间就划分为整数线段，二维的空间就划分为方块，三维空间就划分为立方体，以此类推
+
+<img
+	src='/assets/Effects/PerlinNoise/img1.png'
+	alt='img1'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+**~~2. 给分区的每一个角点分配梯度值~~**
+
+角点的*梯度值*是通过伪*随机*生成的，可以理解为是一个随机向量
+
+<br></br>
+#### 点积计算 **~~1. 向量计算~~**
+
+对于分区内的某一点，计算出所在分区内*角点*指向该点的向量
+
+<img
+	src='/assets/Effects/PerlinNoise/img2.png'
+	alt='img2'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+**~~2. 影响值计算~~**
+
+用角点上的*梯度*点乘角点到该点的向量，求得*角点梯度沿该方向的投影值*，这个投影值称为*影响值*。
+
+<img
+	src='/assets/Effects/PerlinNoise/img3.png'
+	alt='img3'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+#### 插值 **~~1. 插值计算~~**
+
+使用*平滑插值函数*（如 Hermite 插值或 Quintic 插值）对周围角点的*影响值*（梯度投影值）进行插值计算，得到当前该样点的最终的噪声值
+
+<br></br>
+#### 连续性 **~~1. 如何保证噪声图左右连续~~**
+
+当P1的噪声值等于P2的噪声值时，噪声图达成连续
+
+处于边界处的点P1的噪声值由点A和点B的影响值插值得到，同理，点P2的噪声值由点C和点D的影响值插值得到
+
+角点的影响值与其梯度值相关，所以只要保证*点A与点C、点B与点D处生成的随机梯度向量相等*，即可实现左右连续
+
+<img
+	src='/assets/Effects/PerlinNoise/img4.png'
+	alt='img4'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+#### 分形噪声
+
+分形噪声可以通过多张噪声图叠加，并且每次频率翻倍、强度减半，多次叠加后得到
+
+- 图A + 图B _ 0.5 + 图C _ 0.25
+
+### 具体实现
+
+_[未完待续...]_
+
+### 相关资源
+
+图形学 | 柏林噪声是什么？
+
+- https://zhuanlan.zhihu.com/p/591071262
+
+生成连续的2D、3D柏林噪声
+
+- https://zhuanlan.zhihu.com/p/620107368
