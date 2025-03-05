@@ -14,7 +14,641 @@ _[笔记正在搬运中...]_
 
 ### 学习笔记
 
-#### Unity 光照系统
+#### 渲染路径
+
+**~~1. 渲染路径介绍~~**
+
+渲染路径代表不同的*为进行光照计算而设计的*渲染方式
+
+渲染路径分类
+
+- 前向渲染路径 Forward Rendering Path
+- 延迟渲染路径 Deferred Renering Path
+- 顶点照明渲染路径 Vertex Lit Rendering Path (deprecated)
+
+<br></br>
+**~~2. 前向渲染路径~~**
+
+**前向渲染基础介绍**
+
+前向渲染流程
+
+- 对于场景中的每一个光源，计算该光源对每一个物体的光照效果。例如，对于一个点光源，会计算光线从光源位置到物体表面的方向，根据光源的强度、颜色，物体的材质属性等来计算光照的贡献。
+- 这个过程包括计算漫反射光照（基于兰伯特余弦定律）、高光光照（如使用 Phong 或 Blinn - Phong 光照模型）等。
+- 如果有多个光源，就会依次计算每个光源对物体的光照效果，然后将这些光照效果叠加起来，得到物体最终的光照颜色。
+
+---
+
+前向渲染的优点
+
+- 前向渲染的*性能消耗与灯光数量挂钩*，可以通过控制灯光数量来调整性能消耗
+
+---
+
+**Unity中的光照渲染模式**
+
+- 逐像素光照
+- 逐顶点光照
+- 球谐函数光照
+
+<img
+	src='/assets/TA/Shader/img7.png'
+	alt='img7'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+**正确理解和运用前向渲染路径**
+
+角色和光源是动态的，如何保持平稳帧率?
+
+- Unity 中*控制像素光的数量* pixel light count
+
+---
+
+**ForwardBase 和 ForwardAdd 两个 Pass**
+
+ForwardBase pass:
+
+- *一个*逐像素的主光源
+- 顶点光源
+- 球谐光
+
+```csharp
+Tags {"LightMode" = "ForwardBase"}
+#pragma multi_compile_fwdbase
+```
+
+<br></br>
+
+ForwardAdd pass:
+
+- 逐像素的其他非主光源
+
+```csharp
+Tags {"LightMode" = "ForwardAdd"}
+Blend one one
+#pragma multi_compile_fwdadd
+```
+
+---
+
+**Unity 对光照渲染类型的判断**
+
+- 规则一：场景中*最亮的平行光*总是按*逐像素*处理的
+- 规则二：渲染模式被设置为 N*ot Important* 的光源，会按*逐顶点或球谐*处理
+- 规则三：渲染模式被设置为 _Important_ 的光源，会按*逐像素*处理
+- 规则四：如果根据以上规则得到的逐像素光源数量小于 Quality setting 中的逐像素光源数量，会有更多的灯光以逐像素的方式渲染
+
+<br></br>
+**~~3. 延迟渲染路径~~**
+
+**延迟渲染路径介绍**
+
+延迟渲染是将*着色计算延后*的一种渲染方式
+
+延迟渲染路径包含两个pass
+
+- _G-Buffer Pass_ : 几何处理
+- _Lighting Pass_: 光照处理
+
+---
+
+**G-Buffer Pass 几何处理**
+
+将不同的渲染结果储存在Multiple Render Target(2D图片)中
+
+- RT0: Diffuse Color(RGB) + Occlusion(A)
+- RT1: Specular Color(RGB) + Roughness(A)
+- RT2: World Space Normal (RGB)
+- RT3: non-HDR or HDR related information
+- RT4: Light Occlusion 开启阴影时才有这张贴图
+- Depth + Stencil Buffer
+
+---
+
+**Lighting Pass 光照处理**
+
+- 只需渲染出一个屏幕大小的二维矩形，使用第一步在G-buffer中储存的数据对此矩阵的每一个片元进行计算光照
+
+---
+
+**延迟渲染的优缺点**
+
+优点 - 影响一个物体的*光源数量是没有限制*的，无论是多少个光源，都是两个pass计算 - 每一个光源都是*逐像素级别*的，可以正确计算法线贴图及阴影
+
+缺点 - _不支持半透明效果_ - _不支持抗锯齿_ - *内存*开销大 - 不支持正交相机
+
+---
+
+**延迟渲染路径的支持条件**
+
+显卡支持Multiple Rendering Targets(MRT)
+
+ShadeModel 3.0 +
+
+手机平台在 OpenGL3.0 +
+
+<br></br>
+**~~4. 顶点照明渲染路径~~**
+
+**顶点照明渲染的优缺点**
+
+_Deprecated_
+
+---
+
+优点：
+
+- _性能最优_
+- 支持的硬件最广
+- 一个物体只渲染一次（只有一个pass），并且所有光照计算在顶点着色器中进行
+
+缺点
+
+- _效果差_
+- 不支持像素级别的光照效果，如阴影与高质量高光
+- 不能在像素级别采样法线贴图
+
+<br></br>
+**~~5. LightMode~~**
+
+在Shader Pass中通过 *LightMode Tag*区分不同的渲染路径
+
+```csharp
+Pass
+{
+	Tags {"LightMode" = "ForwardBase" } //当工程处于前向渲染路径时，该pass被执行
+}
+```
+
+---
+
+`"LightMode" = "Always"` 默认设置；任何情况下这个pass都会被渲染，无法获得灯光信息
+
+`"LightMode" = "ForwardBase"` 前向渲染中的基础pass
+
+`"LightMode" = "ForwardAdd"` 前向渲染中的额外pass
+
+`"LightMode" = "Deferred"` 延迟渲染
+
+`"LightMode" = "ShadowCaster"` 渲染对象的shadowmap或者depthTexture
+
+`"LightMode" = "MotionVectors"` 计算物体的MotionVectors
+
+<br></br>
+**~~6. Unity 中的灯光类型~~**
+
+Directional Light 平行光
+
+- 无论灯光位置，光照角度不变
+
+Point Light 点光
+
+- 球形光照范围，位置不同，光照角度不同，光照有衰减
+
+Spot Light 聚光灯
+
+- 圆锥体光照范围
+
+Area Light 面光灯
+
+- 仅用于烘焙，没有实时效果
+
+<br></br>
+**~~7. 不同渲染路径的对比与选~~**
+
+<img
+	src='/assets/TA/Shader/img8.png'
+	alt='img8'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+#### 缓冲区
+
+**~~1. 帧缓冲区~~**
+
+存放一帧中的数据信息
+
+可以写入或读取帧缓存中的内容
+
+帧缓冲方式
+
+- 单缓冲：fragment shader - front buffer - screen
+- 双缓冲: fragment shader - back buffer - (光栅扫描显示器) - front buffer - screen
+
+<br></br>
+**~~2. 颜色缓冲区~~**
+
+**帧缓冲区中分为多个不同的子缓冲区**
+
+- Color Buffer 存储每一帧颜色信息的缓冲区
+- Depth Buffer
+- Stencil Buffer
+- 自定义缓冲区
+
+---
+
+**显存占用的计算**
+
+<img
+	src='/assets/TA/Shader/img9.jpg'
+	alt='img9'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- 1920 \* 1080 分辨率的颜色缓冲所占用的显存
+- 1920 _ 1080 _ 3(3byte) /1024 /1024 = 5.93MB
+
+<br></br>
+#### 经验光照模型
+
+**~~1. Lambert 光照模型~~**
+
+**Lambert 光照模型公式**
+
+> 📣 **$$ Diffuse = Ambient + K_d * LightColor*dot(N,L) $$**
+
+- Diffuse: 最终物体上的漫反射
+- Ambient：环境光
+- Kd：材质对光的反射系数(表示该材质会吸收多少比例的光) [0,1]
+- LightColor：光源颜色
+- N: 顶点单位法线向量
+- L：顶点指向光源的单位向量
+
+一个物体最终看起来是什么颜色是由 diffuse color 以及 intrinsic color （固有色）共同决定的
+
+<br></br>
+**~~2. 光强与环境色~~**
+
+Unity中获取环境中的灯光
+
+```csharp
+Pass
+{
+  Tags {"LightMode" = "ForwardBase"}
+  #include "Lighting.cginc"
+}
+```
+
+```csharp
+_LightColor0 //主平行等的颜色值 (rgb = 颜色*intensity; a = intensity)
+_WorldSpaceLightPos0 // 灯光位置
+unity_WorldToLight //从世界空间转换到灯光空间下
+```
+
+```csharp
+unity_AmbientSKy //Environemnt Lighting设置：环境光中的Sky Color
+unity_AmbientEquator //Environemnt Lighting设置环境光中的Equator color
+unity_AmbinetGround //Environemnt Lighting设置环境光中的 Ground color
+UNITY_LIGHTMODEL_AMBIENT //环境光中的颜色
+```
+
+<br></br>
+**~~3. Lambert光照的实现~~**
+
+```csharp
+Properties
+{
+  _DiffuseIntensity("Diffuse Intensity", float) = 1
+}
+Pass
+{
+  float _DiffuseIntensity;
+
+  float4 frag(v2f i) : SV_Target
+  {
+  //Diffuse = ambient + Kd * LightColor * dot(N,L)
+    fixed4 ambient = UNITY_LIGHTMODEL_AMBIENT:
+    fixed4 lightColor = _LightColor0;
+    float4 diffuse = ambient + _DiffuseIntensity * _LightColor * max(0,dot(v.normal, _WorldSpaceLightPos0))
+
+    return diffuse;
+  }
+}
+```
+
+<br></br>
+**~~4. 不同灯光类型的支持与区分~~**
+
+```csharp
+#pragma multi_compile fwadd
+Pass
+{
+  Tags {"LightMode" = "ForwardBase"}
+  //处理主平行光和其他逐顶点以及SH光照
+}
+
+Pass
+{
+  Tags {"LightMode" = "ForwardAdd"}
+
+  #if POINT // 或是其他灯光类型
+    // ...
+  #nedif
+}
+```
+
+<br></br>
+**~~5. 光照的衰减~~**
+
+Unity中一般是通过采样一张*非线性渐变光照贴图*计算光强
+
+- 对于点光源等有光照衰减的光源来说，他们有内置的光照纹理（1D），是一张非线性渐变黑白贴图
+- 通过 _顶点到光源的距离的平方值_ 对光照纹理进行采样
+
+```csharp
+#include "AutoLight.cginc"
+Pass
+{
+  Tags {"LightMode" = "ForwardAdd"} //fwadd处理带衰减的光源的逐像素计算
+  sampler2D _LightTexture0; //Unity内置的光照纹理
+
+  float4 frag (v2f v) : SV_Target
+  {
+    //光源空间下顶点的位置信息
+    float4 lightCoord = mul(unity_WorldToLight,i.pos)
+
+    //采样光照贴图
+    fixed atten = tex2D(_LightTexture0, dot(lightCoord, lightCoord).rr).UNITY_ATTEN_CHANNEL
+  }
+}
+```
+
+- dot (lightCoord, lightCoord) 顶点到光源的向量点乘自身，结果为该向量的平方，即顶点到光源的距离的平方
+- 虽然光照纹理实际是一张2D贴图，但只有1D的信息，通过rr采样该2D纹理相当于通过r采样该1D纹理
+- UNITY_ATTEN_CHANNEL代表光照纹理中，衰减值所在的分量（该纹理贴图其他分量可能储存的是不同的信息）
+
+```csharp
+UNITY_LIGHT_ATTENUATION(atten, 0, i.worldPos);
+// 函数的定义
+#define UNITY_LIGHT_ATTENUATION(destName, input, worldPos)
+//destName 返回最后衰减变量的变量名
+//input 用于阴影的计算
+//worldPos 顶点世界空间下的坐标
+```
+
+---
+
+**点光源的Pass**
+
+```csharp
+Pass
+{
+  Tags {"LightMode" = "ForwardAdd"}
+  Blend One One
+  CGPROGRAM
+  #pragma vertex vert
+  #pragma fragment frag
+  #include "Lighting.cginc"
+  #include "AutoLight.cginc"
+  fixed4 _Color;
+  sampler2D _LightTexture0;
+  struct appdata
+  {
+      float4 vertex : POSITION;
+      float3 normal : NORMAL;
+      float2 uv : TEXCOORD0;
+  };
+  struct v2f
+  {
+      float2 uv : TEXCOORD0;
+      float4 vertex : SV_POSITION;
+      float3 normal : TEXCOORD1;
+      float3 worldPos : TEXCOORD2; // Added world position output
+  };
+  v2f vert (appdata v)
+  {
+      v2f o;
+      o.vertex = UnityObjectToClipPos(v.vertex);
+      o.normal = UnityObjectToWorldNormal(v.normal);
+      o.uv = v.uv;
+      o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz; // Calculate world position
+      return o;
+  }
+  fixed4 frag (v2f i) : SV_Target
+  {
+      float3 worldNormal = normalize(i.normal);
+      float3 worldLightDir = normalize(_WorldSpaceLightPos0.xyz - i.worldPos); // Adjusted for point lights
+      UNITY_LIGHT_ATTENUATION(atten, 0 , i.worldPos); // Correctly calculate attenuation
+      float4 diffuse = _Color * _LightColor0 * max(0, dot(worldNormal, worldLightDir));
+      return diffuse * atten; // Apply attenuation
+  }
+  ENDCG
+}
+```
+
+点光源和平行光不同，位置和方向需要额外计算
+
+<br></br>
+**~~6. Phong 光照模型~~**
+
+**Phong 光照模型公式**
+
+> 📣 **$$ Specular = SpecularColor * K_S*pow(max(0, dot(R,V)), Glossiness) $$**
+
+- Specular Color : 高光颜色
+- Ks : 反射系数（决定高光的强弱）
+- R ： 反射光单位向量
+- V : 从顶点到观测点的单位向量
+- Gloss : 高光指数，用与控制高光的范围大小
+
+---
+
+```csharp
+Properties
+{
+  _SpecularColor("Specular Color", Color) = (1,1,1,1)
+  _SpecularIntensity("Specular Intensity", float) = 1
+  _Glossiness("Glossiness", float) = 10
+}
+Pass
+{
+  fixed4 _SpecularColor;
+  float _SpecularIntensity
+  float _Glossiness
+  float4 frag(v2f i) : SV_Target
+  {
+    // specular term
+    fixed V = normalize(_worldSpaceCameraPos - i.worldPos);
+    fixed R = reflect(-L, N);
+    float4 specular = _SpecularColor * _SpecularIntensity * pow(max(0,dot(R,V)),_Glossiness)
+  }
+
+}
+```
+
+- 出射光方向 R
+- R = 2 _ NdotL _ N - L
+- `reflect()`
+
+<br></br>
+**~~7. Blinn-Phong 光照模型~~**
+
+**Blinn-Phong 光照模型公式**
+
+> 📣 **$$ Specular = SpecularColor * K_S*pow(max(0, dot(N,H)), Glossiness) $$**
+
+- Specular Color : 高光颜色
+- Ks : 反射系数（决定高光的强弱）
+- N ：单位法线向量
+- H : 半程向量（入射光线L和观测方向V的中间向量）
+- Gloss : 高光指数，用与控制高光的范围大小
+
+---
+
+**半程向量H**
+
+- dot(N, H) 与 dot(L, R)成正比，只求前者就可以模拟高光反射
+- H = normalize(L + V)
+
+---
+
+```csharp
+Shader "Unlit/Blinn-Phong"
+{
+    Properties
+    {
+        _Color("Color", Color) = (1,1,1,1)
+        _DiffuseIntensity("Diffuse Intensity", Range(0,1)) = 1
+        _SpecularColor("Specular Color", Color) = (1,1,1,1)
+        _SpecularIntensity("Specular Intensity", float) = 1
+        _Glossiness("Glossiness", float) = 10
+    }
+    SubShader
+    {
+        Tags { "RenderType"="Opaque" }
+        Pass
+        {
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+            #include "UnityCG.cginc"
+            #include "Lighting.cginc"
+            fixed4 _Color;
+            float _DiffuseIntensity;
+            fixed4 _SpecularColor;
+            float _SpecularIntensity;
+            float _Glossiness;
+            struct appdata
+            {
+                float4 vertex : POSITION;
+                float3 normal : NORMAL;
+            };
+            struct v2f
+            {
+                float4 pos : SV_POSITION;
+                float3 worldNormal : TEXCOORD0;
+                float4 worldPos : TEXCOORD1;
+            };
+            v2f vert (appdata v)
+            {
+                v2f o;
+                o.pos = UnityObjectToClipPos(v.vertex);
+                o.worldNormal = UnityObjectToWorldNormal(v.normal);
+                o.worldPos = mul(unity_ObjectToWorld, v.vertex);
+                return o;
+            }
+            fixed4 frag (v2f i) : SV_Target
+            {
+                // ambient term
+                fixed4 ambient = UNITY_LIGHTMODEL_AMBIENT;
+                // diffuse term (half-lambertian shading model)
+                fixed4 lightColor = _LightColor0;
+                float3 N = normalize(i.worldNormal);
+                float3 L = _WorldSpaceLightPos0;
+                float NdotL = dot(N, L);
+                float4 diffuse = lightColor * _DiffuseIntensity * (max(0, NdotL) * 0.5 + 0.5);
+                diffuse *= _Color;
+                // specular term (blinn-phong shading model)
+                float3 V = normalize(_WorldSpaceCameraPos - i.worldPos);
+                float3 H = normalize(L + V);
+                float4 specular =_SpecularColor * _SpecularIntensity * pow(max(0,dot(N,H)),_Glossiness);
+                float4 col = ambient + diffuse + specular;
+                return col;
+            }
+            ENDCG
+        }
+    }
+}
+```
+
+<br></br>
+#### 深度测试与写入
+
+**~~1. 深度缓冲区~~**
+
+每个顶点的深度信息会在*光栅化阶段*（fragment shader前）进行插值并储存到深度缓冲区中
+
+深度值范围`[0,1]` ,呈 _非线性_ （距离摄像机越近的物体的深度值会有更高精度）
+
+不透明物体渲染时打开深度写入， *半透明物体*渲染时*关闭*深度写入
+
+---
+
+复杂半透明物体在保证渲染顺序的同时实现半透明效果
+
+- _两个Pass_，一个打开深度写入，但不输出颜色信息。另一个关闭深度写入，输出颜色信息。
+- 不破坏深度排序的情况下绘制半透明物体，并确保正确地混合它们与其他不透明物体。
+- 每个半透明体都需要进行两个pass的计算，消耗大
+
+```csharp
+Pass
+{
+  ZWrite On
+  ColorMask = 0 //不显示任何颜色通道信息
+}
+Pass
+{
+  ZWrite Off
+  //正常处理光照和其他渲染信息
+}
+```
+
+<br></br>
+**~~2. 深入测试 ZTest~~**
+
+深度值的测试操作
+
+```csharp
+ZTest (Less|Greater|LEqua|GEqual|Equal|NotEqual|Never|Always)
+// 默认为Less
+```
+
+<br></br>
+**~~3. 深度偏移 Offset~~**
+
+距离相机近裁剪面*越近*的物体，Z-value深度值的*精度*越高
+
+当两个物体深度值相同时，叠加可能会出现渲染交错的效果
+
+- 解决办法一： 微调其中一个物体的深度，并且确保相机近裁剪面不要过小
+- 解决方法二：保持两者深度值相同，使用*深度偏移*
+
+深度偏移*只改变深度缓冲中的值*，不改变模型实际位置
+
+```csharp
+Offset Factors, Units
+// offset = (m * factor) + (r * units)
+// 默认值为 0，0
+// Offset > 0, 即将物体往远处推，离摄像机更远 （Z值变大）
+```
+
+<br></br>
+#### 阴影
+
+**~~1. ShadowMapping的原理~~**
+
+<br></br>
+**~~2. Unity中阴影的投射 Casting Shadow~~**
+
+<br></br>
+**~~3. Unity中阴影的接收~~**
+
+<br></br>
+#### 光照系统
 
 **~~1. LightMapping 理论~~**
 
@@ -178,4 +812,4 @@ Bloom 泛光效果
 	style='width: 100%; height: auto; display:block; margin: 0 auto;'
 />
 
-### 相关资源
+<br></br>

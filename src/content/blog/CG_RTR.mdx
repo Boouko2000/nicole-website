@@ -1,0 +1,57 @@
+---
+heroImage: /src/assets/images/cover_CG_RTR.png
+category: 图形学与引擎学习
+description: 《Real-Time Rendering》 4th 学习笔记
+pubDate: 2024-01-28T16:00:00.000Z
+tags:
+  - 图形学理论
+title: 《Real-Time Rendering》 4th 学习笔记
+---
+
+### Texture
+
+#### Bump Mapping 凹凸映射
+
+**~~1. 概述~~**
+
+物体的细节可以被归类为三种：
+
+1. Macro-features
+
+- 宏观可以通过顶点和模型三角面片表示，例如角色的外形、四肢等
+
+2. Meso-features
+
+- 中等大小的细节可以通过*bump mapping*的方式表示，例如皱纹、衣服上的褶皱等
+
+3. Micro-features
+
+- 微观细节如粗糙、光滑的表面则可以通过着色模型来表示
+
+---
+
+不同类型的bump mapping是通过他们所表现得细节特征不同来区分的。
+
+在1978年，Blinn提出了在着色的过程中，如果我们将物体表面真正的法线替换成稍微凸出一些的表面法线时，物体表面的细节就会被展示出来。
+
+他将这种描述“表面发现的凸起量”的数据存储在数组中。
+
+通过bump mapping, 在*不改变模型原本法线*的情况下，也可以通过贴图修改表面法线。
+
+---
+
+Bump mapping中，记录的是法线的*相对偏移量*， 法线必须相对于某个*参考框架*改变。
+
+为了实现这一点，每个顶点都会存储一个切线空间基(Tangent-Space Basis)， 这个*参考框架*用于*将光线从世界空间变换到表面顶点的局部空间*，
+
+<img
+	src='/assets/CG/RTR/img1.png'
+	alt='img1'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~2. Blinn的方法~~**
+
+<br></br>
+**~~3. 法线映射~~**
