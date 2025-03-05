@@ -1,0 +1,251 @@
+---
+heroImage: /src/assets/images/cover_effect_blur.png
+category: 实践记录
+description: 常见模糊算法的总结与在Unity下的实现(迭代中...)
+pubDate: 2024-12-31T16:00:00.000Z
+tags:
+  - 图形学理论
+  - 效果实现
+  - 后处理
+title: 【后处理】常见模糊算法
+---
+
+### 简介
+
+#### 后处理原理
+
+<img
+	src='/assets/Effects/blur/img1.png'
+	alt='img1'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+通过`Graphics.Blit()`对帧缓冲区图形进行处理
+
+`Graphics.Blit()`由 *C#脚本 + Shader*来实现
+
+在脚本的`OnRenderImage()`函数中调用`Graphics.Blit()`
+
+<br></br>
+#### 常见模糊算法总结
+
+十种图像模糊算法横向对比
+
+<img
+	src='/assets/Effects/blur/img2.png'
+	alt='img1'
+	style='width: 80%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+### 高斯模糊
+
+#### 高斯模糊介绍
+
+<img
+	src='/assets/Effects/blur/img3.png'
+	alt='img3'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+从数字信号处理的角度看，图像模糊的本质一个通过*卷积滤波*过滤高频信号，*保留低频信号*的过程 - 相当于一个低通滤波器
+
+<br></br>
+**~~高斯核~~**
+
+高斯核是一个正方形的像素矩阵，像素值对应的是2D高斯曲线的值
+
+<img
+	src='/assets/Effects/blur/img4.png'
+	alt='img4'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+图像中的每个像素被乘以高斯核，然后将所有这些值相加，得到输出图像中此处的值
+
+<img
+	src='/assets/Effects/blur/img5.png'
+	alt='img5'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~高斯模糊方程~~**
+
+二维空间下的高斯模糊方程
+
+<img
+	src='/assets/Effects/blur/img6.png'
+	alt='img6'
+	style='width: 40%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- `x` 和 `y` 代表的是图像中的*像素坐标*（uv坐标的偏移值）
+- `σ` 是*标准差*，决定了分布的宽度或者图像模糊的程度
+
+<br></br>
+**~~二维高斯函数的简化~~**
+
+如果使用一个 _$$ N _ N $$* 的高斯核对图像进行卷积处理，就需要 *$$ N _ N _ W _ H $$_ 此采样
+
+可以将二维的高斯函数拆分成*两个一维函数*分别对图像进行处理（满足线性可分 Linearly separable），即使用二维矩阵变换得到的效果也可以通过在水平方向进行一维高斯矩阵变换加上竖直方向的一维高斯矩阵变换得到， 这样就只需要 _$$ 2 _ N _ W _ H $$\* 次采样
+
+<br></br>
+**~~总结~~**
+
+1. 图像模糊相当于把周围的像素值以*不同的像素贡献度*加给当前的像素值，从而在视觉上实现平均模糊。而这个像素的贡献值就由*高斯分布公式*计算得到，所以称为高斯模糊
+2. 高斯模糊核是一个 `k×k` 的二维矩阵，矩阵的每个元素表示相对于中心像素的权重`σ`。`σ`越大，模糊效果越明显。
+3. 高斯模糊shader本质上就是进行代公式计算*得到高斯模糊核*，再进行*卷积操作*。
+
+<br></br>
+#### 具体实现
+
+<details>
+  <summary>C# 脚本</summary>
+  ```csharp
+  using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class GaussianBlur : MonoBehaviour
+{
+public Shader shader;
+public int iterationTime = 10;
+
+    private void OnRenderImage(RenderTexture src, RenderTexture dest)
+    {
+        Material material = new Material(shader);
+        var buffer=RenderTexture.GetTemporary(src.width, src.height);
+        Graphics.Blit(src, buffer);
+        for (int i = 0; i < iterationTime; i++)
+        {
+            var buffer2=RenderTexture.GetTemporary(src.width, src.height);
+            Graphics.Blit(buffer, buffer2, material,0);
+            RenderTexture.ReleaseTemporary(buffer);
+            buffer = buffer2;
+
+
+            buffer2=RenderTexture.GetTemporary(src.width, src.height);
+            Graphics.Blit(buffer, buffer2, material,1);
+            RenderTexture.ReleaseTemporary(buffer);
+            buffer = buffer2;
+        }
+
+        Graphics.Blit(buffer, dest);
+        RenderTexture.ReleaseTemporary(buffer);
+    }
+
+}
+
+````
+</details>
+
+<details>
+<summary>GaussianBlur Shader</summary>
+```csharp
+Shader "PostProcessing/GaussianBlur"
+{
+  Properties
+  {
+      _MainTex ("Texture", 2D) = "white" {}
+  }
+  SubShader
+  {
+      ZTest Always
+      Cull Off
+      Zwrite Off
+
+      CGINCLUDE
+      #include "UnityCG.cginc"
+
+      struct appdata
+      {
+          float4 vertex : POSITION;
+          float2 uv : TEXCOORD0;
+      };
+
+      struct v2f
+      {
+          half2 uv[5]:TEXCOORD0;
+          float4 vertex : SV_POSITION;
+      };
+
+      sampler2D _MainTex;
+      float4 _MainTex_ST;
+      half4 _MainTex_TexelSize;
+
+
+      v2f vertV(appdata v)
+      {
+          v2f o;
+          o.vertex = UnityObjectToClipPos(v.vertex);
+          const half2 uv = v.uv;
+          o.uv[0] = uv;
+          o.uv[1] = uv + float2(0, _MainTex_TexelSize.y * 1);
+          o.uv[2] = uv + float2(0, _MainTex_TexelSize.y * 2);
+          o.uv[3] = uv + float2(0, _MainTex_TexelSize.y * -1);
+          o.uv[4] = uv + float2(0, _MainTex_TexelSize.y * -2);
+          return o;
+      }
+
+      v2f vertH(appdata v)
+      {
+          v2f o;
+          o.vertex = UnityObjectToClipPos(v.vertex);
+          const half2 uv = v.uv;
+          o.uv[0] = uv;
+          o.uv[1] = uv + float2(_MainTex_TexelSize.x * 1,0);
+          o.uv[2] = uv + float2(_MainTex_TexelSize.x * 2,0);
+          o.uv[3] = uv + float2(_MainTex_TexelSize.x * -1,0);
+          o.uv[4] = uv + float2(_MainTex_TexelSize.x * -2,0);
+          return o;
+      }
+
+      fixed4 frag(v2f i) : SV_Target
+      {
+          float weight[3] = {0.4026, 0.2442, 0.0545};
+          fixed3 sum = tex2D(_MainTex, i.uv[0]).rgb * weight[0];
+          for (int index = 1; index < 3; index++)
+          {
+              sum += tex2D(_MainTex, i.uv[index]).rgb * weight[index];
+              sum += tex2D(_MainTex, i.uv[index+2]).rgb * weight[index];
+          }
+
+          return fixed4(sum, 1);
+      }
+      ENDCG
+      Pass
+      {
+          NAME "G_V"
+          CGPROGRAM
+          #pragma vertex vertV
+          #pragma fragment frag
+          ENDCG
+      }
+      Pass
+      {
+          NAME "G_H"
+          CGPROGRAM
+          #pragma vertex vertH
+          #pragma fragment frag
+          ENDCG
+      }
+
+
+  }
+}
+````
+
+</details>
+
+<br></br>
+### 方框模糊
+
+<br></br>
+### 相关参考
+
+高品质后处理：十种图像模糊算法的总结与实现
+
+- https://zhuanlan.zhihu.com/p/125744132
