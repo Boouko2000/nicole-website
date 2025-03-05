@@ -1,0 +1,314 @@
+---
+heroImage: /src/assets/images/CG_AA.png
+category: 图形学与引擎学习
+description: 记录并迭代常见抗锯齿方案
+pubDate: 2025-03-04T16:00:00.000Z
+tags:
+  - 图形学理论
+title: 主流抗锯齿方案总结
+---
+
+### 简介
+
+#### 锯齿产生的原因
+
+在光栅化阶段，如果三角形（红线内）覆盖了像素点的中心（绿点），则该像素点被着色。在光栅化阶段时覆盖到的像素点是*离散*的，形成锯齿
+
+<img
+	src='/assets/CG/AA/img1.png'
+	alt='img1'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+我们希望通过抗锯齿来都达到以下的着色效果：
+
+- 每个像素点，根据三角形对当前像素正方形*覆盖的面积*，*按比例*贡献颜色值
+
+<img
+	src='/assets/CG/AA/img2.png'
+	alt='img2'
+	style='width: 70%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+#### 信号采样和重构
+
+**~~音频信号采样和重构的过程~~**
+
+录制声音时：在一定时间间隔对声音信号进行采样
+播放声音时：从采样点中还原声音信号
+
+<img
+	src='/assets/CG/AA/img3.png'
+	alt='img3'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~重构~~**
+
+重构通过将采样值经过 filter 来实现，常见的三种filter有
+
+- Box filter
+- Tent filter
+- Sinc filter (效果好、复杂)
+
+<img
+	src='/assets/CG/AA/img4.png'
+	alt='img4'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~使用 sinc 函数重构的过程~~**
+
+<img
+	src='/assets/CG/AA/img5.png'
+	alt='img5'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+当采样点过少，还原出来的波形就是错误的
+
+<img
+	src='/assets/CG/AA/img6.png'
+	alt='img6'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+#### 实现抗锯齿的两种思路
+
+**~~1. 多次采样~~**
+
+在每个像素中进行多次采样，将多次采样的结果综合来计算像素的颜色值
+
+- MSAA（最早）
+- TAA
+
+<br></br>
+**~~2. 后处理~~**
+
+通过后处理寻找屏幕中的像素块*边界*，然后根据边界的信息，将两侧的像素点颜色进行*插值*，这样就会得到平滑过渡的边缘，实现抗锯齿的效果
+
+- FXAA
+- SMAA
+  通过后处理抗锯齿的方式*开销固定*，不会因为绘制物体的多少而营销开销
+
+<img
+	src='/assets/CG/AA/img7.png'
+	alt='img7'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+
+### SSAA 超级采样抗锯齿
+
+#### SSAA的原理
+
+SSAA 以*高于目标分辨率*（如 2x 或 4x）渲染整个场景，然后将高分辨率图像*下采样*到目标分辨率
+
+#### SSAA的优缺点
+
+由于对整个场景进行高分辨率采样，SSAA 的*抗锯齿效果最好*，但计算*开销大*
+
+#### SSAA的步骤
+
+1. 确定超级采样倍数
+2. 以高分辨率渲染整个场景
+3. 对每个采样点进行独立的颜色计算
+4. Downsampling 将高分辨率图像压缩到目标分辨率
+
+- 对每个目标像素，将其对应的高分辨率采样点的颜色值进行平均
+
+5. 输出最终图像
+
+#### 伪代码
+
+```csharp
+#include <vector>
+#include <algorithm>
+
+// 颜色结构体
+struct Color {
+    float r, g, b;
+};
+
+// 定义图像类
+class Image {
+public:
+    int width, height;
+    std::vector<Color> pixels;
+
+    Image(int w, int h) : width(w), height(h), pixels(w * h) {}
+
+    // 获取像素颜色
+    Color getPixel(int x, int y) const {
+        return pixels[y * width + x];
+    }
+
+    // 设置像素颜色
+    void setPixel(int x, int y, const Color& color) {
+        pixels[y * width + x] = color;
+    }
+};
+
+// 渲染高分辨率场景
+Image renderScene(int width, int height) {
+    Image image(width, height);
+
+    // ***渲染逻辑***
+
+    return image;
+}
+
+// SSAA 实现 -----------
+Image applySSAA(const Image& highResImage, int targetWidth, int targetHeight, int ssaaFactor) {
+    // 创建目标分辨率图像
+    Image finalImage(targetWidth, targetHeight);
+
+    // 下采样过程
+    for (int y = 0; y < targetHeight; ++y) {
+        for (int x = 0; x < targetWidth; ++x) {
+            Color colorSum = {0.0f, 0.0f, 0.0f};
+
+            // 遍历高分辨率图像的采样区域
+            for (int dy = 0; dy < ssaaFactor; ++dy) {
+                for (int dx = 0; dx < ssaaFactor; ++dx) {
+                    // 计算高分辨率图像中的像素坐标
+                    int highResX = x * ssaaFactor + dx;
+                    int highResY = y * ssaaFactor + dy;
+
+                    // 累加采样点颜色
+                    Color sampleColor = highResImage.getPixel(highResX, highResY);
+                    colorSum.r += sampleColor.r;
+                    colorSum.g += sampleColor.g;
+                    colorSum.b += sampleColor.b;
+                }
+            }
+
+            // 计算平均颜色
+            int numSamples = ssaaFactor * ssaaFactor;
+            Color averageColor = {
+                colorSum.r / numSamples,
+                colorSum.g / numSamples,
+                colorSum.b / numSamples
+            };
+
+            // 设置目标图像的像素颜色
+            finalImage.setPixel(x, y, averageColor);
+        }
+    }
+
+    return finalImage;
+}
+
+int main() {
+    // 目标分辨率
+    int targetWidth = 1920;
+    int targetHeight = 1080;
+
+    // 超级采样倍数
+    int ssaaFactor = 4;
+
+    // 高分辨率渲染
+    int highResWidth = targetWidth * ssaaFactor;
+    int highResHeight = targetHeight * ssaaFactor;
+    Image highResImage = renderScene(highResWidth, highResHeight);
+
+    // 应用 SSAA
+    Image finalImage = applySSAA(highResImage, targetWidth, targetHeight, ssaaFactor);
+
+    // 输出最终图像
+    // ...
+    return 0;
+}
+```
+
+<br></br>
+### MSAA 多重采样抗锯齿
+
+#### MSAA原理
+
+**~~基本采样步骤~~**
+
+为每个像素点设置对应的*次像素点*， 对于每个次像素点，会先进行*覆盖测试*来监测当前次像素点是否在三角形内部，如果是就需要采样
+
+每个次像素点的着色不会分别单独计算，而是共享中心点的着色结果
+
+每个通过覆盖测试的次像素点还需要进行深度-模板测试，通过后在像素中心位置采样的结果（共享）会被写入次像素点
+
+<img
+	src='/assets/CG/AA/img8.png'
+	alt='img8'
+	style='width: 80%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~像素中心点不在三角形内部的情况~~**
+
+当有此像素点通过了覆盖测试，但是像素的中心点不在三角形内部时，如果直接用中心点采样就会得到错误的渲染结果
+
+这种情况下，GPU会挑选*最近通过覆盖测试的次像素点*作为采样点
+
+<br></br>
+**~~MSAA的存储~~**
+
+MSAA 是使用单独的贴图格式来存储的，比如 RGBA8_4X（4个次采样点），占用内存是普通贴图的4倍
+
+<img
+	src='/assets/CG/AA/img9.png'
+	alt='img9'
+	style='width: 50%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+**~~最终结果~~**
+
+当渲染工作完成后，通过box filter对MSAA的RenderTarget进行resolve操作，来计算最终每个像素的结果。
+
+- Box filter：将像素中对应的次像素点中的颜色直接取平均值
+
+---
+
+每个像素上的次像素采样点越多，得到的效果也就越好
+
+<img
+	src='/assets/CG/AA/img10.png'
+	alt='img0'
+	style='width: 60%; height: auto; display:block; margin: 0 auto;'
+/>
+
+<br></br>
+#### MSAA优缺点
+
+**~~优点~~**
+
+1. 使用起来简单方便
+2. 抗锯齿*效果好*
+
+<br></br>
+**~~缺点~~**
+
+1. _会额外消耗大量内存和带宽_
+
+- 特别是对于延迟渲染来说，GBuffer 本身就已经很大了，如果再使用 MSAA，额外的带宽消耗极大，因此延迟渲染一般不会使用 MSAA来作为实现抗锯齿手段
+
+<br></br>
+
+2. _MSAA 对硬件的利用率低_
+
+- 一般只有在高频的地方如物体边缘会需要抗锯齿，但低频的地方其实不需要抗锯齿
+- 使用 MSAA 进行大量物体的渲染时，很多带宽是被浪费的
+
+<br></br>
+### TAA 时间性抗锯齿
+
+<br></br>
+### FXAA 快速近似抗锯齿
+
+<br></br>
+### 相关参考 主流抗锯齿方案详解 - https://zhuanlan.zhihu.com/p/415087003
