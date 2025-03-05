@@ -1,0 +1,1025 @@
+---
+heroImage: /src/assets/images/cover_CS_JavaScript.png
+category: 计算机学习
+description: JavaScript 学习笔记
+pubDate: 2024-09-30T16:00:00.000Z
+tags:
+  - 计算机语言基础
+title: JavaScript 学习笔记
+---
+
+### JavaScript 基础语法
+
+#### 基础
+
+**~~Introduction to JavaScript~~**
+
+High-level, object-oriented, multi-paradigm programming language 高级、面向对象、多范式编程语言
+
+<br></br>
+**~~Node.js~~**
+
+Node 是 JavaScirpt 的一个运行环境
+
+- 传统上，JavaScript 只能在浏览器中运行，而 Node.js 使得开发者可以在服务器端运行 JavaScript。
+
+<br></br>
+**~~链接 JavaScript file~~**
+
+```html
+<body>
+	<h1>JavaScript Fundamentals – Part 1</h1>
+	<script src="script.js"></script>
+</body>
+```
+
+<br></br>
+**~~变量~~**
+
+命名规范： camelCase
+
+变量类型：
+
+- Primitive Types
+
+  - string
+  - number
+  - boolean
+  - undefined
+  - null
+  - symbol
+  - bitint
+
+- Reference Types
+  - Object
+  - Array
+  - Function
+
+<br></br>
+**~~对象 Object~~**
+
+```js
+// 创建 person object
+let person = {
+	name: 'Andy',
+	age: 30
+}
+console.log(person)
+```
+
+访问变量：
+
+`person.name` `person['name']`
+
+<br></br>
+**~~数组 Array~~**
+
+```js
+let selecedColors = ['red', 'blue']
+console.log(selecedColors[0])
+```
+
+- 数据长度动态可变，且可以储存不同类型的变量
+- typeof 数组 ： object （数组的变量类型是 object）
+
+<br></br>
+**~~函数 Functions~~**
+
+```js
+function greet() {
+	console.log('Hello world')
+}
+greet() // call the functio
+```
+
+---
+
+有返回值的函数
+
+```js
+function square(number) {
+	return number * number
+}
+let result = square(4)
+console.log(result)
+```
+
+<br></br>
+#### 类型转换
+
+**~~Number 型的类型转换~~**
+
+显式转换:
+
+- `parseInt();`
+- `parseFloat();
+- `Number();
+
+---
+
+隐式转换:
+
+- `+`
+
+<br></br>
+**~~Boolean 型的转换~~**
+
+显式转换:
+
+- `Boolean`
+
+---
+
+隐式转换:
+
+- 有字符串的加法 `‘’ + 1 = 1`
+- 减法：空字符串转换成 `0`
+- null 经过数字转换后编程 `0`
+
+```js
+null + 3 // 3
+undefined + 3 //Nan
+null == undefined // true (值都是0)
+null === undefined // false （数据类型不一样）
+```
+
+---
+
+Falsy
+
+- NaN
+- Undefined
+- null
+- 0
+- false
+
+<br></br>
+#### 数组
+
+**~~声明数组~~**
+
+`let arrayName = [ele1, ele2];`
+
+<br></br>
+**~~forEach 遍历数组~~**
+
+`forEach()` 方法用于调用数组中的每个元素，并将元素传递给回调函数
+
+- 只遍历，不返回数组
+- `map()`遍历并返回数组
+- 当前数组元素参数必须写，当前元素索引号可选
+
+```js
+被遍历的数组.forEach(function(当前数组元素，当前元素索引号){
+  //函数体
+})
+```
+
+```js
+const arr = [1, 2, 3]
+arr.forEach(function (item, index) {
+	console.log(item)
+	console.log(index)
+})
+```
+
+<br></br>
+#### 对象基础
+
+**~~对象基础~~**
+
+对象是 js 中的一种数据类型（引用型），是一种无序的数据集合
+
+对象由属性+方法组成
+
+```js
+let obj = {
+	name: 'Andy',
+	age: 18,
+	gender: 'female'
+}
+```
+
+---
+
+对象使用
+
+```js
+// 对象声明语法
+let objName = {} //method1
+let objName = new Object() //method2
+```
+
+<br></br>
+**~~对象操作~~**
+
+查
+
+- `obj.property;`
+- `obj[['property'];`
+
+<br></br>
+**~~对象方法~~**
+
+```js
+let person = {
+	name: 'andy',
+	sayHi: function () {
+		console.log('Hi')
+	}
+}
+person.sayHi()
+```
+
+<br></br>
+**~~遍历对象~~**
+
+`for...in` 遍历对象
+
+<br></br>
+**~~内置对象 Math~~**
+
+常见方法
+
+- `random()` - 生成 [0,1)
+- `ceil()`
+- `floor()`
+- `round()`
+- `max()`
+- `min()`
+- `pow()`
+- `abs()`
+
+---
+
+生成任意范围内的随机数
+
+`random()` [0,1)
+
+```js
+// 生成 N-M之间的随机数
+Math.floor(Math.random() * (M - N + 1)) + N
+```
+
+<br></br>
+#### 对象进阶
+
+**~~通过 Factory Function创建对象实例 object~~**
+
+```js
+// Factory Function
+function createCircle(radius) {
+	// 返回一个对象
+	return {
+		radius, //等于 radius = radius
+		draw() {} // 成员函数不用加function关键字
+	}
+}
+// 通过factory function来‘实例化’对象
+const circle1 = createCirecle(1)
+circle1.draw()
+```
+
+<br></br>
+**~~通过构造函数创建对象实例~~**
+
+```js
+// PascalNotation for constructor function
+function Circle(radius) {
+	this.radius = radius
+	this.draw = function () {}
+}
+const circle1 = new Circle(1) //通过new来实例化对象
+```
+
+<br></br>
+**~~JS 的动态对象特性~~**
+
+可以动态移除或添加对象成员或函数
+
+<br></br>
+**~~值类型与引用类型~~**
+
+值类型
+
+```js
+let x = 10
+let y = x //值类型为深复制
+x = 20
+console.log(y) // 10
+```
+
+引用类型
+
+```js
+let x = { value: 10 } // object
+let y = x // 引用类型复制的是地址
+x.value = 20
+console.log(y.value) // 20
+```
+
+<br></br>
+**~~克隆对象~~**
+
+```js
+const circle = {
+	radius: 1,
+	draw() {
+		console.log('draw')
+	}
+}
+const another = {} //empty object
+for (let key in circle) {
+	another[key] = circle[key]
+}
+```
+
+```js
+const circle = {
+	radius: 1,
+	draw() {
+		console.log('draw')
+	}
+}
+//参数一：target object
+//参数二：source object
+const anotehr = Object.assign({}, circle)
+```
+
+```js
+const circle = {
+	radius: 1,
+	draw() {
+		console.log('draw')
+	}
+}
+// 运算符...
+const another = { ...circle }
+```
+
+<br></br>
+**~~Math~~**
+
+- https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math
+
+<br></br>
+**~~String~~**
+
+JS 中有两种字符串类型：primitive string 与 string objec
+
+```js
+const message = 'hi' // primitive
+message.length
+const anotehr = new String('hi') // object
+```
+
+- primitive type 不应该有 fuctions 如 length
+- 但是对于 string 来说，当通过.来调用 function 时，自动转换成 string object
+
+<br></br>
+**~~模版语法~~**
+
+```js
+// Object {}
+// Boolean true false
+// String '', ""
+// Template ``
+// 打印的结果与代码书写一致
+const name = 'Andy'
+const anotehr = `Hi ${name},
+This is my
+‘first’ message`
+// This is my
+// 'first' message
+```
+
+<br></br>
+**~~Date 对象~~**
+
+```js
+const now = new Date()
+const date1 = new Date('May 11 2028 09:00')
+const date2 = new Date(2018, 0, 11, 9, 0) // 2018.1.11 - 9:00
+```
+
+<br></br>
+#### WebAPI
+
+**~~Web API 的作用和分类~~**
+
+DOM：文档对象模型，用于操作网页内容
+
+BOM：浏览器对象模型
+
+<br></br>
+**~~DOM 对象~~**
+
+```html
+<body>
+	<div>123</div>
+	<script>
+		const div = document.querySelector('div') //获取DOM对象
+	</script>
+</body>
+```
+
+<br></br>
+#### Operations
+
+**~~逻辑操作用于非布尔数据~~**
+
+falsy
+
+- `undefinednull`
+- `0`
+- `false`
+- `''`
+- `NAN`
+
+---
+
+truthy
+
+- 除了 Falsy 都是 truthy
+
+```js
+false || 'ABC' // "ABC" 返回trutht
+```
+
+```js
+let userColor = 'red'
+let defaultColor = 'blue'
+let currentColor = userColor || defualtColor
+console.log(currentColor) // 'red'
+userColor = undefined //falsy
+console.log(currentColor) // 'blue'
+```
+
+<br></br>
+**~~位元运算符 Bitwise operator~~**
+
+```js
+// 1 = 00000001
+// 2 = 00000010
+// R = 00000011
+// 以两者的二进制位元为单位进行OR运算，如果其中一个是1则返回1
+// bitwise OR
+console.log(1 | 2) // 3（00000011）
+console.log(1 & 2) // 0 (00000000)
+```
+
+<br></br>
+#### Flow Control
+
+**~~Switch...case~~**
+
+```js
+let role = 'guest'
+switch (role) {
+	case 'guest':
+		console.log('Guest User')
+		break
+	case 'moderator':
+		console.log('modeator user')
+		break
+	default:
+		console.log('Unknown user')
+}
+```
+
+<br></br>
+**~~for-in loop~~**
+
+用于遍历 object 中的成员变量
+
+```js
+const person = {
+	name: 'Andy',
+	age: 30
+}
+// 遍历object中的所有变量
+for (let key in person) console.log(key, person[key])
+```
+
+<br></br>
+**~~for-of loop~~**
+
+用于遍历数组
+
+```js
+const colors = ['red', 'green', 'blue']
+for (let color of colors) console.log(color)
+```
+
+<br></br>
+### JavaScript 进阶
+
+#### 作用域
+
+**~~局部作用域~~**
+
+局部作用域类型：
+
+- 函数作用域
+- 块作用域
+
+---
+
+函数作用域
+
+- 在函数内部声明的变量只能在函数内部被访问
+- 函数的参数也是函数内部的局部变量
+- 函数执行完毕后，函数内部的变量被清空
+
+---
+
+块作用域
+
+- 被`{}`包含的属于块作用域，块作用域中声明的变量有可能无法被外部访问
+- `let` 声明的变量产生块作用域，`var`声明的变量不产生块作用域
+- 不同代码块之间的变量无法互相访问
+
+<br></br>
+**~~全局作用域~~**
+
+`<script>`标签和`.js`文件的最外层就是全局作用域
+
+- 在此声明的变量在函数内部也可以被访问
+- 全局作用域中的变量，任何其他作用域都可以访问
+
+---
+
+为 window 对象动态添加的属性默认是全局的（不推荐）
+函数中未使用任何关键字声明的变量是全局的（不推荐）
+
+<br></br>
+**~~作用域链~~**
+
+作用域链的本质是*底层的变量查找机制*
+
+- 在函数被执行时，会优先在当前函数作用域中查找变量
+- 如果当前函数作用域找不到该变量，则会依次逐父级作用域直到全局作用域查找
+- 子作用域能够访问父作用域中变量，父作用域无法访问子作用域变量
+
+<br></br>
+**~~JS 垃圾回收机制（GC）~~**
+
+JS 中内存的分配和回都是自动完成的，内存在不使用的时候会被垃圾回收器自动回收
+
+---
+
+JS 环境中分配的内存，一般有如下生命周期：
+
+- _内存分配_：当声明变量、函数、对象时，系统会自动为它们分配内存
+- _内存使用_：使用变量、函数时，即读写内存
+- _内存回收_：使用完毕时由垃圾回收器自动回收不再使用的内存
+
+---
+
+回收规则：
+
+- 全局变量一般不会被回收（页面关闭时回收）
+- 局部变量不用时会被自动回收
+
+---
+
+_内存泄漏_：程序中分配的内存由于某种原因未释放或无法释放
+
+---
+
+JS 垃圾回收机制算法说明
+
+- 内存区域
+  - 栈：由操作系统自动分配释放的局部变量、基本数据类型会被存放在栈
+  - 堆：由程序员手动分配释放，如不手动释放，垃圾回收机制回收，复杂数据类型会被存放在堆
+
+---
+
+引用计数算法：
+
+- IE 浏览器采样该算法来定义“不再使用的内存”，主要看一个对象是否还有指向它的引用，没有了就回收对象
+- 缺点：嵌套引用；两个对象互相引用，垃圾回收器不会回收，造成内存泄漏
+
+---
+
+标记清除算法 【常用】：
+
+- 将“不再使用的对象”定义为“无法到达的对象”
+- 从 root （全局变量）出发定时扫描内存中的对象，凡事能从 root 到达的对象，都是还需要使用的
+- 那些无法从 root 出发触及的对象会被标记为不再使用，稍后进行回收
+
+<br></br>
+**~~闭包~~**
+
+闭包的概念：
+
+- 闭包是指有权访问另一个函数作用域中变量的函数。
+- 简单来说，当一个函数内部嵌套另一个函数，并且内部函数可以访问外部函数的变量时，就形成了闭包
+- 闭包 = 内层函数 + 外层函数的变量
+
+```js
+function outer() {
+	let a = 10
+	function inner() {
+		console.log(a) // closure
+	}
+}
+```
+
+---
+
+闭包的作用
+
+- 封闭数据，提供操作，外部也可以访问函数内部的变量
+
+```js
+function outter() {
+	let i = 1
+	function inner() {
+		console.log(i)
+	}
+	return inner
+}
+const func = outer()
+func() // 1
+```
+
+```js
+//简约写法
+function outter() {
+	let i = 1
+	return function () {
+		console.log(i)
+	}
+}
+const func = outer()
+func() // 1
+```
+
+<br></br>
+**~~变量提升~~**
+
+变量提升的流程
+
+- 将`var`声明的变量提升到当前作用域最前面
+- 只提升声明，不提升赋值
+
+<br></br>
+#### 函数进阶
+
+**~~函数提升~~**
+
+概念：函数的调用不一定要在声明之后，因为函数的声明会在编译时被提升至前面。只提升声明，不提升函数调用
+
+<br></br>
+**~~函数参数~~**
+
+函数动态参数
+
+- `arguments`是函数内部内置的伪数组变量，包含了调用函数时传入的所有实参
+
+```js
+function getSum(){
+  console.log(arguments); //函数内置的伪数组变量
+  let sum = 0;
+  for(let i = 0; i < arguments.length()){
+    sum += arguments[i];
+  }
+}
+getSum(1);
+getSum(2,3,4);
+```
+
+---
+
+剩余参数
+
+- `...`置于函数最后一个形参之前，用于获取多余的实参
+- 允许将一个不定数量的参数通过一个数组表示
+
+```js
+function getSum(...value) {
+	console.log(value)
+	let sum = 0
+}
+getSum(1)
+getSum(2, 3, 4)
+```
+
+<br></br>
+**~~展开运算符~~**
+
+`...`将一个数组/对象进行展开
+
+- 写在函数参数内`...`是剩余参数；写在其他地方`...`是展开运算符
+- 展开运算符不修改原数组
+- 常用于求数组最值、合并数组等
+
+```js
+const arr = [1, 2, 3]
+//求最值
+console.log(Math.max(...arr))
+```
+
+```js
+const arr1 = [1, 2, 3]
+const arr2 = [4, 5, 6]
+const arr4 = [...arr1, ...arr2]
+```
+
+<br></br>
+**~~箭头函数~~**
+
+使用场景：箭头函数适用于那些本来需要匿名函数的地方
+
+---
+
+基本语法
+
+```js
+// 普通匿名函数
+const func = function () {
+	console.log('...')
+}
+// 通过箭头函数表示
+const func = () => {
+	console.log('...')
+}
+// 如果函数只有一个参数的情况下可以省略（）
+const func = (x) => {
+	console.log(x)
+}
+// 如果函数体只有一行代码的情况下可以省略{}
+const func = (x) => console.log(x)
+// 如果函数体只有一行代码且有返回值的情况下可以省略{}和return
+const func = (x) => x + 1 // return x + 1
+//加（）的函数体表示返回对象字面量表达式（object literal）
+// 返回一个对象
+const func = (username) => ({ username: username })
+func('Andy')
+```
+
+---
+
+箭头函数参数
+
+- 箭头函数没有 arguments 动态参数，但是有`...`剩余参数
+
+---
+
+箭头函数 `this`
+
+- 对于普通函数来说，`this` 指向函数的调用者
+- 箭头函数不会创建自己的 `this`，只会沿用自己作用域链的上一层的 this
+- 只有函数里面有 `this`
+
+```js
+const fn = () => {
+	console.log(this) // window
+}
+const obj = {
+	sayHi: () => {
+		console.log(this) // 上一层作用域是window
+	}
+}
+const obj = {
+	sayHi: function () {
+		const count = () => {
+			console.log(this) // 上一层作用域是sayHi()函数中的this，指向的是sayHi()的调用者obj
+		}
+		count()
+	}
+}
+```
+
+<br></br>
+#### 解构赋值
+
+**~~数组解构~~**
+
+概念：将数组的单元值快速批量赋值给一系列变量
+
+目标：使用解构快速为变量赋值
+
+---
+
+基本语法
+
+```js
+const [max, min, avg] = [100, 60, 80]
+console.log(max)
+console.log(min)
+console.log(avg)
+```
+
+---
+
+案例
+
+```js
+let a = 1
+let b = 2
+;[b, a] = [a, b]
+```
+
+```js
+const [a, b, [c, d]] = [1, 2, [3, 4]]
+```
+
+<br></br>
+**~~对象解构~~**
+
+概念：将对象的的属性和方法快速批量赋值给一系列变量
+
+---
+
+基本语法
+
+- `{变量 1，变量 2} = 对象`
+- 对象属性的值将赋值给同名变量
+
+```js
+const obj = {
+	uname: 'Andy',
+	age: 18
+}
+const { uname, age } = obj
+console.log(uname) // Andy
+console.log(age) // 18
+```
+
+---
+
+修改对象解构的变量名
+
+- `旧变量名：新变量名`
+
+```js
+const obj = {
+	uname: 'Andy',
+	age: 18
+}
+const { uname: username, age } = obj
+console.log(username) // Andy
+console.log(age) // 18
+```
+
+<br></br>
+#### 深入对象
+
+**~~创建对象的三种方式~~**
+
+字面量创建对象
+
+```js
+const obj = {
+	name: 'Andy'
+}
+```
+
+---
+
+利用 new 关键字创建对象
+
+```js
+const obj = new Object({ name: 'Andy' })
+```
+
+---
+
+利用构造函数创建对象
+
+<br></br>
+**~~构造函数~~**
+
+概念：构造函数是用来初始化对象的；可以通过构造函数来快速创建多个相似的对象
+
+构造函数的约定：
+
+- 命名以大写字母开头
+- 通过`new`关键字执行
+
+```js
+function Person(name, age) {
+	this.name = name
+	this.age = age
+}
+const Andy = new Person('Andy', 18)
+const Mary = new person('Mary', 23)
+```
+
+---
+
+说明
+
+- 实例化对象时如果没有参数，可以省略`()`
+- 构造函数内部不用写`return`
+
+---
+
+实例化的过程
+
+- 创建新对象`{ }`
+- 构造函数`this`指向新的对象
+- 执行构造函数内代码，修改 `this`，添加新的属性
+- 返回新对象
+
+<br></br>
+**~~实例成员&静态成员~~** 实例成员 - 通过构造函数创建的对象叫做实例对象 -
+实例对象中的属性和方法称为*实例成员*（实例属性、实例方法）
+
+---
+
+静态成员：
+
+- 构造函数本身的属性和方法叫做*静态成员*（静态属性、静态方法）
+- 静态成员只能通过构造函数进行访问
+- 静态方法中的 this 指向构造函数，因为方法是构造函数这个对象调用的
+
+<br></br>
+#### 内置构造函数
+
+对于某些简单数据类型，JavaScript 底层会包装成复杂数据类型(如 string)，所以才有属性和方法
+
+- 内置构造函数
+  - 引用类型：Object, Array, RegExp, Date
+  - 包装类型：String, Number, Boolean 等
+
+<br></br>
+**~~Object~~**
+
+Object 常用静态方法（实例成员无法调用，只能通过 Object.xxx 调用）
+
+---
+
+`Object.key()` 静态方法获取对象中的所有属性(key)
+
+- 返回一个数组
+
+```js
+const o = { name: 'Andy', age: 16 }
+const arr = Object.key(o)
+```
+
+---
+
+`Object.value()`静态方法获取对象中过的所有属性值（value）
+
+- 返回一个数组
+
+---
+
+`Object.assign()` 静态方法用于对象合并
+
+- 第一个参数：拷贝容器
+- 第二个参数：拷贝目标
+- 常用语给对象添加属性
+
+```js
+const o = { name: 'Andy', age: 16 }
+const obj = {}
+Object.assign(obj, o)
+```
+
+<br></br>
+**~~Array~~**
+
+数组常见的实例方法
+
+<img
+	src='/assets/CS/JavaScript/img1.png'
+	alt='img1'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+- `forEach()`
+- `filter()`
+- `map()`
+- `reduce()`
+
+---
+
+数组其他常见方法
+
+<img
+	src='/assets/CS/JavaScript/img2.png'
+	alt='img2'
+	style='width: 100%; height: auto; display:block; margin: 0 auto;'
+/>
+
+---
+
+`reduce()`实例方法
+
+- 如果有起始值，则把起始值累加到结果中
+
+```js
+arr.reduce(function(上一次值，当前值){},起始值);
+```
+
+```js
+const arr = [1, 2, 3]
+arr.reduce(function (prev, current) {
+	return prev + current
+})
+```
